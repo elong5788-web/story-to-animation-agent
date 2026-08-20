@@ -19,7 +19,7 @@ public class VideoClient {
 
     // ===== 可能需要调整的配置,集中放这里 =====
     static final String BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
-    static final String MODEL = "doubao-seedance-2-0-fast";   // ← 模型 ID,可能要对
+    static final String MODEL = "doubao-seedance-2-0-fast-260128";   // ← 模型 ID(带版本号)
     static final int DURATION_SECONDS = 5;                    // 视频时长(秒)
     static final String RESOLUTION = "720p";                  // 分辨率
     // ================================================

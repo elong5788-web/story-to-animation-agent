@@ -12,3 +12,6 @@ target/
 # 系统文件
 .DS_Store
 Thumbs.db
+
+# 生成的视频(二进制大文件,不提交)
+*.mp4
