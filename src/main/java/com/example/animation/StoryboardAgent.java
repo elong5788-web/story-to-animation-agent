@@ -31,7 +31,12 @@ public class StoryboardAgent {
 
     /** 主流程:拆镜 → 质检 → 不满意就重新拆,直到通过或达到次数上限 */
     public List<Shot> plan(String story) throws Exception {
-        List<Shot> shots = generate(story, null);
+        return plan(story, null);
+    }
+
+    /** 带上反馈重新拆镜(人工反馈或质检反馈都走这里) */
+    public List<Shot> plan(String story, String feedback) throws Exception {
+        List<Shot> shots = generate(story, feedback);
 
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             Review review = review(shots);
@@ -52,7 +57,7 @@ public class StoryboardAgent {
     private List<Shot> generate(String story, String feedback) throws Exception {
         String systemPrompt = DIRECTOR_PROMPT;
         if (feedback != null && !feedback.isBlank()) {
-            systemPrompt += "\n上一次的分镜被质检否定了,反馈如下:\n" + feedback + "\n请针对这些问题重新拆分。";
+            systemPrompt += "\n上一次的分镜不满意,反馈如下:\n" + feedback + "\n请针对这些意见重新拆分。";
         }
         String reply = client.chat(systemPrompt, story);
         return parser.parse(reply);
