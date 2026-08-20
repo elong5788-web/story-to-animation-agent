@@ -1,0 +1,14 @@
+# 编译产物
+*.class
+
+# Maven / Spring Boot(后面会用到)
+target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# 系统文件
+.DS_Store
+Thumbs.db
