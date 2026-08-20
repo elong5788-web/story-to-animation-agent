@@ -26,14 +26,11 @@
 
     <build>
         <plugins>
-            <!-- 方便直接运行: mvn compile exec:java -Dexec.args="故事" -->
+            <!-- 运行主程序: ./mvnw compile exec:java -Dexec.mainClass=com.example.animation.Main -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.1.0</version>
-                <configuration>
-                    <mainClass>com.example.animation.Main</mainClass>
-                </configuration>
             </plugin>
         </plugins>
     </build>
