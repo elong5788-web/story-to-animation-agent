@@ -35,11 +35,11 @@ public class StoryboardAgent {
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             Review review = review(shots);
             if (review.approved()) {
-                System.out.println("✅ 第 " + attempt + " 次质检通过,分镜合格。\n");
+                System.out.println("[通过] 第 " + attempt + " 次质检通过,分镜合格。\n");
                 return shots;
             }
-            System.out.println("⚠️ 第 " + attempt + " 次质检未通过,问题: " + review.feedback());
-            System.out.println("   → 根据反馈重新拆分镜(re-plan)...\n");
+            System.out.println("[未通过] 第 " + attempt + " 次质检未通过,问题: " + review.feedback());
+            System.out.println("   [重新拆分] 根据反馈重新拆分镜(re-plan)...\n");
             shots = generate(story, review.feedback());
         }
 
