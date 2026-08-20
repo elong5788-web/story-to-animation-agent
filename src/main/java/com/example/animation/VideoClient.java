@@ -97,9 +97,9 @@ public class VideoClient {
     }
 
     private HttpResponse<String> send(String method, String url, String body) throws Exception {
-        String key = System.getenv("ARK_API_KEY");
+        String key = Config.get("ARK_API_KEY");
         if (key == null || key.isBlank()) {
-            throw new IllegalStateException("请先设置环境变量 ARK_API_KEY");
+            throw new IllegalStateException("请在 config.properties 里填 ARK_API_KEY(或设置环境变量)");
         }
         HttpRequest.Builder b = HttpRequest.newBuilder()
                 .uri(URI.create(url))

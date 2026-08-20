@@ -24,9 +24,9 @@ public class DeepSeekClient {
 
     /** 把系统提示 + 用户消息发给 DeepSeek,返回它的回复文字 */
     public String chat(String systemPrompt, String userMessage) throws Exception {
-        String apiKey = System.getenv("DEEPSEEK_API_KEY");
+        String apiKey = Config.get("DEEPSEEK_API_KEY");
         if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalStateException("请先设置环境变量 DEEPSEEK_API_KEY");
+            throw new IllegalStateException("请在 config.properties 里填 DEEPSEEK_API_KEY(或设置环境变量)");
         }
 
         String body = """
