@@ -17,7 +17,8 @@ public class StoryboardAgent {
     private static final String DIRECTOR_PROMPT = "你是一个动画导演。请把用户给的故事拆成分镜脚本,"
             + "用 JSON 数组输出。每个镜头包含字段:"
             + "shot(镜头号)、shotType(景别,如远景/中景/特写)、"
-            + "description(画面描述)、action(画面动作)。"
+            + "description(画面描述)、action(画面动作)、"
+            + "duration(该镜头时长,秒,只能取 5 或 10,根据剧情节奏决定)。"
             + "只输出 JSON,不要任何解释。";
 
     private static final String REVIEWER_PROMPT = "你是一个严格的动画质检员。请检查下面这个分镜脚本是否合格:\n%s\n"

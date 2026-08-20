@@ -18,7 +18,7 @@ public class VideoTest {
         VideoClient client = new VideoClient();
 
         System.out.println("提交任务...");
-        String taskId = client.submit(prompt);
+        String taskId = client.submit(prompt, 5);
         System.out.println("任务 id: " + taskId + "\n");
 
         System.out.println("等待生成(视频要几十秒到几分钟)...");

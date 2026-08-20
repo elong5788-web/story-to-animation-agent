@@ -20,7 +20,6 @@ public class VideoClient {
     // ===== 可能需要调整的配置,集中放这里 =====
     static final String BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
     static final String MODEL = "doubao-seedance-2-0-fast-260128";   // ← 模型 ID(带版本号)
-    static final int DURATION_SECONDS = 5;                    // 视频时长(秒)
     static final String RESOLUTION = "720p";                  // 分辨率
     // ================================================
 
@@ -29,15 +28,15 @@ public class VideoClient {
             .build();
     private final ObjectMapper mapper = new ObjectMapper();
 
-    /** 提交一个文生视频任务,返回任务 id */
-    public String submit(String prompt) throws Exception {
+    /** 提交一个文生视频任务,返回任务 id;durationSeconds 是该镜头时长 */
+    public String submit(String prompt, int durationSeconds) throws Exception {
         String body = """
                 {
                   "model": "%s",
                   "content": [{"type": "text", "text": "%s"}],
                   "parameters": {"resolution": "%s", "duration": %d}
                 }
-                """.formatted(MODEL, escape(prompt), RESOLUTION, DURATION_SECONDS);
+                """.formatted(MODEL, escape(prompt), RESOLUTION, durationSeconds);
 
         HttpResponse<String> resp = send("POST", BASE_URL + "/contents/generations/tasks", body);
         JsonNode node = mapper.readTree(resp.body());
