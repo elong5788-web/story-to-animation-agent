@@ -40,8 +40,8 @@ public class Main {
     /** 画面/动作的 8 个细分维度 */
     record ShotDesign(String subject, String clothing, String setting, String style, String quality,
                       String camera, String narrative, String action) {
-        String scene(String worldText) {
-            return worldText + "," + subject + "," + clothing + "," + setting + "," + style + "," + quality;
+        String scene() {
+            return subject + "," + clothing + "," + setting + "," + style + "," + quality;
         }
         String motion() {
             return action + "," + camera + "," + narrative;
@@ -310,7 +310,7 @@ public class Main {
     /** 短片:用户提供图 → 图生视频/首尾帧;没图 → 纯文生视频 */
     static void generateShortVideo(Scanner sc, ShotDesign d, WorldBuilding world, String stamp) throws Exception {
         int duration = Config.getInt("DURATION", 5);
-        String scene = d.scene(world.toText());
+        String scene = d.scene();
         String motion = d.motion();
 
         // 可选:用户提供首帧/尾帧图
@@ -324,7 +324,7 @@ public class Main {
         String taskId;
         if (first == null) {
             System.out.println("\n生成视频(纯文生视频,约 1~3 分钟)...");
-            taskId = video.submit(scene, duration);
+            taskId = video.submit(scene + "," + motion, duration);
         } else if (last == null) {
             System.out.println("\n生成视频(图生视频,约 1~3 分钟)...");
             taskId = video.submitImageToVideo(first, motion, duration);
