@@ -1,5 +1,8 @@
 package com.example.animation;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,28 +13,33 @@ import java.util.List;
 import java.util.Scanner;
 
 /**
- * 主程序:输入一句话 → 选模式(短片/长片)→ DeepSeek 修饰 → 用户审查/修改 → Seedance 生成视频。
- * 所有生成的视频统一放在 output/ 文件夹里,带时间戳不覆盖。
+ * 主程序:输入一句话 → 选模式 → DeepSeek 拆成「画面描述 + 动作描述」→ 用户审查
+ * → 文生图(画面)→ 图生视频(动作)→ 出片。
  */
 public class Main {
 
     static final String FFMPEG = "C:/Users/elong258/ffmpeg/bin/ffmpeg.exe";
     static final String OUTPUT_DIR = "output";
 
-    /** DeepSeek 角色:专业提示词工程师,把一句话扩写成高质量视频提示词 */
+    /** DeepSeek 角色:把一句话拆成「画面描述 + 动作描述」两段,JSON 输出 */
     static final String EXPANDER_PROMPT = "你是一个专业的 AI 视频提示词工程师。"
-            + "请把用户的一句话,扩写成一段高质量的文生视频提示词,必须包含这些要素:"
-            + "主体(谁/什么,外貌细节)、动作(在做什么)、场景(在哪,环境细节)、"
-            + "镜头(景别如远景/特写,运镜如缓慢推近/平移)、光影氛围、"
-            + "风格(如电影感/写实/水墨/赛博朋克)、画质(如4K、超高清、细节丰富)。"
-            + "直接输出这段提示词(80~150字),不要任何解释或多余内容。";
+            + "请把用户的一句话,拆成两段提示词,用 JSON 输出,格式严格为:{\"scene\":\"画面描述\",\"motion\":\"动作描述\"}。"
+            + "scene(画面描述,给文生图用):主体、场景、光影、风格、画质关键词,约80字。"
+            + "motion(动作描述,给图生视频用):动作、镜头运镜,约30字。"
+            + "只输出 JSON,不要任何解释或多余内容。";
+
+    /** 两段提示词 */
+    record VideoPrompt(String scene, String motion) {
+    }
+
+    private static final ObjectMapper mapper = new ObjectMapper();
 
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
-        Files.createDirectories(Path.of(OUTPUT_DIR));   // 确保输出文件夹存在
-        String stamp = timestamp();                      // 本次运行的时间戳
+        Files.createDirectories(Path.of(OUTPUT_DIR));
+        String stamp = timestamp();
 
-        // 1. 输入画面描述(可直接输入,回车则用 story.txt 里的)
+        // 1. 输入画面描述
         String fromFile = readStory(args);
         System.out.println("当前 story.txt: " + fromFile);
         System.out.print("输入你想生成的画面(直接回车用上面的): ");
@@ -62,45 +70,54 @@ public class Main {
         } else {
             // ===== 短片模式 =====
             DeepSeekClient ds = new DeepSeekClient();
-            String description = ds.chat(EXPANDER_PROMPT, input);
-            description = reviewPromptLoop(sc, ds, input, description);
-            if (description == null) return;
-            generateShortVideo(sc, description, stamp);
+            VideoPrompt prompt = generatePrompt(ds, input);
+            prompt = reviewPromptLoop(sc, ds, input, prompt);
+            if (prompt == null) return;
+            generateShortVideo(sc, prompt, stamp);
         }
     }
 
-    /** 短片:让用户审查一段画面描述,可反复修改;满意返回描述,取消返回 null */
-    static String reviewPromptLoop(Scanner sc, DeepSeekClient ds, String input, String description) throws Exception {
+    /** 让 DeepSeek 拆出「画面描述 + 动作描述」 */
+    static VideoPrompt generatePrompt(DeepSeekClient ds, String input) throws Exception {
+        String reply = ds.chat(EXPANDER_PROMPT, input);
+        String json = StoryboardParser.stripCodeFence(reply);
+        JsonNode node = mapper.readTree(json);
+        String scene = node.path("scene").asText("");
+        String motion = node.path("motion").asText("");
+        if (scene.isBlank()) scene = input;      // 解析失败兜底
+        if (motion.isBlank()) motion = scene;
+        return new VideoPrompt(scene, motion);
+    }
+
+    /** 短片:让用户审查两段提示词,可反复修改 */
+    static VideoPrompt reviewPromptLoop(Scanner sc, DeepSeekClient ds, String input, VideoPrompt prompt) throws Exception {
         while (true) {
-            System.out.println("\nDeepSeek 修饰后的画面描述:");
-            System.out.println("  " + description);
-            System.out.println("  · 输入 y → 满意,生成视频");
-            System.out.println("  · 输入 n → 取消");
-            System.out.println("  · 输入 r → 换一个不同的版本");
-            System.out.println("  · 输入其他 → 当作修改意见,重新修饰");
+            System.out.println("\n【画面描述】(文生图用,画什么):");
+            System.out.println("  " + prompt.scene());
+            System.out.println("【动作描述】(图生视频用,怎么动):");
+            System.out.println("  " + prompt.motion());
+            System.out.println("  · y=满意 / n=取消 / r=换一个 / 其他=修改意见");
             System.out.print("> ");
             String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
-            if (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes")) return description;
+            if (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes")) return prompt;
             if (answer.equalsIgnoreCase("n") || answer.equalsIgnoreCase("no") || answer.equals("取消")) {
                 System.out.println("已取消。");
                 return null;
             }
             if (answer.equalsIgnoreCase("r") || answer.equals("换一个")) {
-                description = ds.chat(EXPANDER_PROMPT, input + "\n\n(请给一个和上次完全不同的新版本)");
+                prompt = generatePrompt(ds, input + "\n(请给和上次完全不同的新版本)");
                 continue;
             }
-            String userMsg = input + "\n\n(上一次修饰结果:[" + description + "],用户意见:" + answer + ",请重新修饰。)";
-            description = ds.chat(EXPANDER_PROMPT, userMsg);
+            prompt = generatePrompt(ds, input + "\n\n(上次的画面描述:[" + prompt.scene()
+                    + "],动作描述:[" + prompt.motion() + "],用户意见:" + answer + ",请重新拆分。)");
         }
     }
 
-    /** 长片:让用户审查分镜,可反复修改;满意返回镜头列表,取消返回 null */
+    /** 长片:让用户审查分镜,可反复修改 */
     static List<Shot> reviewShotsLoop(Scanner sc, StoryboardAgent agent, String input, List<Shot> shots) throws Exception {
         while (true) {
             printShots(shots);
-            System.out.println("  · 输入 y → 满意,生成视频");
-            System.out.println("  · 输入 n → 取消");
-            System.out.println("  · 输入其他 → 当作修改意见,重新拆镜");
+            System.out.println("  · y=满意 / n=取消 / 其他=修改意见重新拆镜");
             System.out.print("> ");
             String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
             if (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes")) return shots;
@@ -114,25 +131,25 @@ public class Main {
     }
 
     /** 短片:关键帧(用户提供或 AI 生成)→ 图生视频 */
-    static void generateShortVideo(Scanner sc, String description, String stamp) throws Exception {
+    static void generateShortVideo(Scanner sc, VideoPrompt prompt, String stamp) throws Exception {
         int duration = Config.getInt("DURATION", 5);
 
-        // 1. 确定关键帧(用户给路径/网址,或 AI 生成)
-        String keyframeInput = askForKeyframe(sc, description);
-        if (keyframeInput == null) return;   // 用户取消
+        // 1. 确定关键帧:用「画面描述」文生图
+        String keyframeInput = askForKeyframe(sc, prompt.scene());
+        if (keyframeInput == null) return;
 
-        // 2. 图生视频:文字是"动作描述",告诉视频模型怎么动
+        // 2. 图生视频:关键帧 + 「动作描述」
         System.out.println("\n② 图生视频:让关键帧动起来(约 1~3 分钟)...");
         VideoClient video = new VideoClient();
-        String taskId = video.submitImageToVideo(keyframeInput, description, duration);
+        String taskId = video.submitImageToVideo(keyframeInput, prompt.motion(), duration);
         String url = video.waitForVideo(taskId);
         Path out = Path.of(OUTPUT_DIR, "video-" + stamp + ".mp4");
         video.download(url, out);
         System.out.println("视频已生成: " + out.toAbsolutePath());
     }
 
-    /** 关键帧来源:粘贴图片路径/网址,或序号选 materials/,或回车 AI 生成。返回 URL/dataURL */
-    static String askForKeyframe(Scanner sc, String description) throws Exception {
+    /** 关键帧来源:粘贴路径/网址,或序号选 materials/,或回车 AI 生成 */
+    static String askForKeyframe(Scanner sc, String scene) throws Exception {
         List<Path> materialsImages = listMaterialsImages();
         while (true) {
             if (!materialsImages.isEmpty()) {
@@ -149,12 +166,11 @@ public class Main {
             String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
 
             if (answer.isBlank()) {
-                return aiKeyframeWithReview(sc, description);   // 可能返回 null(取消)
+                return aiKeyframeWithReview(sc, scene);
             }
             if (answer.startsWith("http://") || answer.startsWith("https://")) {
-                return answer;   // 直接用网址
+                return answer;
             }
-            // 序号 → materials/
             if (!materialsImages.isEmpty()) {
                 try {
                     int idx = Integer.parseInt(answer) - 1;
@@ -164,7 +180,6 @@ public class Main {
                 } catch (NumberFormatException ignored) {
                 }
             }
-            // 本地文件路径
             Path p = Path.of(answer);
             if (Files.exists(p) && Files.isRegularFile(p)) {
                 return ImageClient.toDataUrl(p);
@@ -173,7 +188,6 @@ public class Main {
         }
     }
 
-    /** 列出 materials/ 里的图片 */
     static List<Path> listMaterialsImages() throws Exception {
         Path dir = Path.of("materials");
         List<Path> images = new ArrayList<>();
@@ -189,11 +203,11 @@ public class Main {
     }
 
     /** AI 文生图 + 用户确认,返回 dataURL(取消返回 null) */
-    static String aiKeyframeWithReview(Scanner sc, String description) throws Exception {
+    static String aiKeyframeWithReview(Scanner sc, String scene) throws Exception {
         ImageClient image = new ImageClient();
         while (true) {
             System.out.println("\n① 文生图:生成关键帧(约 10~30 秒)...");
-            String url = image.textToImage(description);
+            String url = image.textToImage(scene);
             Path keyframe = Path.of(OUTPUT_DIR, "keyframe-" + timestamp() + ".jpg");
             image.download(url, keyframe);
             System.out.println("   关键帧已生成: " + keyframe);
