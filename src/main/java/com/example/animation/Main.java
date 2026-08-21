@@ -13,21 +13,28 @@ import java.util.List;
 import java.util.Scanner;
 
 /**
- * 主程序:输入一句话 → 选模式 → DeepSeek 拆成「画面描述 + 动作描述」→ 用户审查
- * → 文生图(画面)→ 图生视频(动作)→ 出片。
+ * 主程序:
+ * 输入一句话 → 【前置】定世界观(氛围,用户必须满意)→ 拆画面/动作 → 文生图 → 图生视频。
  */
 public class Main {
 
     static final String FFMPEG = "C:/Users/elong258/ffmpeg/bin/ffmpeg.exe";
     static final String OUTPUT_DIR = "output";
 
-    /** DeepSeek 角色:把一句话拆成「画面描述 + 动作描述」两段,JSON 输出,要非常专业 */
-    static final String EXPANDER_PROMPT = "你是一个专业的 AI 视频提示词工程师。"
-            + "请把用户的一句话,拆成两段提示词,用 JSON 输出,格式严格为:{\"scene\":\"画面描述\",\"motion\":\"动作描述\"}。"
-            + "scene(画面描述,给文生图用):主体外貌细节、场景环境、光影氛围、艺术风格、构图,"
-            + "并附英文画质关键词(如 4K, cinematic lighting, ultra-detailed, photorealistic, masterpiece),约150字,务必具体专业。"
-            + "motion(动作描述,给图生视频用):动作过程、镜头运镜(景别+运动方式)、节奏,约50字。"
-            + "只输出 JSON,不要任何解释或多余内容。";
+    /** 世界观(氛围)8 个子维度 */
+    record WorldBuilding(String tone, String scale, String mystery, String wonder,
+                         String palette, String lighting, String weather, String culture) {
+        String toText() {
+            return "世界观基调:" + tone
+                    + "\n宏大尺度:" + scale
+                    + "\n神秘感:" + mystery
+                    + "\n独有奇观:" + wonder
+                    + "\n色调系统:" + palette
+                    + "\n光线性质:" + lighting
+                    + "\n自然气象:" + weather
+                    + "\n文化符号:" + culture;
+        }
+    }
 
     /** 两段提示词 */
     record VideoPrompt(String scene, String motion) {
@@ -35,12 +42,28 @@ public class Main {
 
     private static final ObjectMapper mapper = new ObjectMapper();
 
+    /** 世界观构建师:生成氛围 8 个子维度 */
+    static final String WORLD_PROMPT = "你是一个奇幻世界观构建师。"
+            + "请根据用户的一句话,构建这个世界的「氛围」,用 JSON 输出,格式严格为:"
+            + "{\"tone\":\"世界观基调\",\"scale\":\"宏大尺度\",\"mystery\":\"神秘感\",\"wonder\":\"独有奇观\","
+            + "\"palette\":\"色调系统\",\"lighting\":\"光线性质\",\"weather\":\"自然气象\",\"culture\":\"文化符号\"}。"
+            + "每个字段用一两句话描述,要具体、有画面感、有明显异世界感。只输出 JSON,不要任何解释。";
+
+    /** 提示词工程师:在已锁定世界观基础上,拆画面 + 动作 */
+    static final String EXPANDER_PROMPT = "你是一个专业的 AI 视频提示词工程师。"
+            + "已锁定的世界观氛围如下:\n%s\n"
+            + "请在这个世界观基础上,把用户的一句话拆成两段提示词,用 JSON 输出,格式严格为:{\"scene\":\"画面描述\",\"motion\":\"动作描述\"}。"
+            + "scene(画面描述,给文生图用):主体外貌细节、服装、场景环境、延续上述世界观氛围、艺术风格、构图,"
+            + "并附英文画质关键词(如 4K, cinematic lighting, ultra-detailed, masterpiece),约150字,务必具体专业。"
+            + "motion(动作描述,给图生视频用):动作过程、镜头运镜(景别+运动方式)、节奏,约50字。"
+            + "只输出 JSON,不要任何解释或多余内容。";
+
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
         Files.createDirectories(Path.of(OUTPUT_DIR));
         String stamp = timestamp();
 
-        // 1. 输入画面描述
+        // 1. 输入
         String fromFile = readStory(args);
         System.out.println("当前 story.txt: " + fromFile);
         System.out.print("输入你想生成的画面(直接回车用上面的): ");
@@ -71,16 +94,73 @@ public class Main {
         } else {
             // ===== 短片模式 =====
             DeepSeekClient ds = new DeepSeekClient();
-            VideoPrompt prompt = generatePrompt(ds, input);
-            prompt = reviewPromptLoop(sc, ds, input, prompt);
+
+            // 前置:定世界观,必须让用户满意
+            WorldBuilding world = generateWorld(ds, input);
+            world = reviewWorldLoop(sc, ds, input, world);
+            if (world == null) return;
+
+            // 后续:基于世界观,拆画面 + 动作
+            VideoPrompt prompt = generatePrompt(ds, input, world);
+            prompt = reviewPromptLoop(sc, ds, input, world, prompt);
             if (prompt == null) return;
+
             generateShortVideo(sc, prompt, stamp);
         }
     }
 
-    /** 让 DeepSeek 拆出「画面描述 + 动作描述」 */
-    static VideoPrompt generatePrompt(DeepSeekClient ds, String input) throws Exception {
-        String reply = ds.chat(EXPANDER_PROMPT, input);
+    /** 生成世界观(氛围 8 子维度) */
+    static WorldBuilding generateWorld(DeepSeekClient ds, String input) throws Exception {
+        String reply = ds.chat(WORLD_PROMPT, input);
+        String json = StoryboardParser.stripCodeFence(reply);
+        try {
+            JsonNode n = mapper.readTree(json);
+            return new WorldBuilding(
+                    n.path("tone").asText(""), n.path("scale").asText(""),
+                    n.path("mystery").asText(""), n.path("wonder").asText(""),
+                    n.path("palette").asText(""), n.path("lighting").asText(""),
+                    n.path("weather").asText(""), n.path("culture").asText(""));
+        } catch (Exception e) {
+            return new WorldBuilding(json, "", "", "", "", "", "", "");
+        }
+    }
+
+    /** 世界观审查:用户必须满意,可加文字填补优化 */
+    static WorldBuilding reviewWorldLoop(Scanner sc, DeepSeekClient ds, String input, WorldBuilding world) throws Exception {
+        while (true) {
+            System.out.println("\n===== 世界观设定(请审查,满意才继续)=====");
+            System.out.println("【基调】" + world.tone());
+            System.out.println("【尺度】" + world.scale());
+            System.out.println("【神秘感】" + world.mystery());
+            System.out.println("【奇观】" + world.wonder());
+            System.out.println("【色调】" + world.palette());
+            System.out.println("【光线】" + world.lighting());
+            System.out.println("【气象】" + world.weather());
+            System.out.println("【文化】" + world.culture());
+            System.out.println("  · y = 满意,锁定这个世界");
+            System.out.println("  · r = 换一个完全不同的世界");
+            System.out.println("  · 其他 = 你补充的文字,用来优化这个世界");
+            System.out.println("  · n = 取消");
+            System.out.print("> ");
+            String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
+            if (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes")) return world;
+            if (answer.equalsIgnoreCase("n") || answer.equalsIgnoreCase("no") || answer.equals("取消")) {
+                System.out.println("已取消。");
+                return null;
+            }
+            if (answer.equalsIgnoreCase("r") || answer.equals("换一个")) {
+                world = generateWorld(ds, input + "\n(请给一个完全不同的世界)");
+                continue;
+            }
+            // 其他 = 用户补充文字
+            world = generateWorld(ds, input + "\n\n(用户补充的世界观设定:" + answer + ")");
+        }
+    }
+
+    /** 基于世界观,拆画面 + 动作 */
+    static VideoPrompt generatePrompt(DeepSeekClient ds, String input, WorldBuilding world) throws Exception {
+        String prompt = EXPANDER_PROMPT.formatted(world.toText());
+        String reply = ds.chat(prompt, input);
         String json = StoryboardParser.stripCodeFence(reply);
         try {
             JsonNode node = mapper.readTree(json);
@@ -90,13 +170,12 @@ public class Main {
             if (motion.isBlank()) motion = scene;
             return new VideoPrompt(scene, motion);
         } catch (Exception e) {
-            // JSON 解析失败:整段文字同时当画面和动作用
             return new VideoPrompt(json, json);
         }
     }
 
-    /** 短片:让用户审查两段提示词,可反复修改 */
-    static VideoPrompt reviewPromptLoop(Scanner sc, DeepSeekClient ds, String input, VideoPrompt prompt) throws Exception {
+    /** 短片:审查画面 + 动作两段提示词 */
+    static VideoPrompt reviewPromptLoop(Scanner sc, DeepSeekClient ds, String input, WorldBuilding world, VideoPrompt prompt) throws Exception {
         while (true) {
             System.out.println("\n【画面描述】(文生图用,画什么):");
             System.out.println("  " + prompt.scene());
@@ -111,15 +190,15 @@ public class Main {
                 return null;
             }
             if (answer.equalsIgnoreCase("r") || answer.equals("换一个")) {
-                prompt = generatePrompt(ds, input + "\n(请给和上次完全不同的新版本)");
+                prompt = generatePrompt(ds, input + "\n(请给和上次不同的版本)", world);
                 continue;
             }
-            prompt = generatePrompt(ds, input + "\n\n(上次的画面描述:[" + prompt.scene()
-                    + "],动作描述:[" + prompt.motion() + "],用户意见:" + answer + ",请重新拆分。)");
+            prompt = generatePrompt(ds, input + "\n\n(上次画面:[" + prompt.scene()
+                    + "],动作:[" + prompt.motion() + "],用户意见:" + answer + ",请重新拆分。)", world);
         }
     }
 
-    /** 长片:让用户审查分镜,可反复修改 */
+    /** 长片:审查分镜 */
     static List<Shot> reviewShotsLoop(Scanner sc, StoryboardAgent agent, String input, List<Shot> shots) throws Exception {
         while (true) {
             printShots(shots);
@@ -140,11 +219,9 @@ public class Main {
     static void generateShortVideo(Scanner sc, VideoPrompt prompt, String stamp) throws Exception {
         int duration = Config.getInt("DURATION", 5);
 
-        // 1. 确定关键帧:用「画面描述」文生图
         String keyframeInput = askForKeyframe(sc, prompt.scene());
         if (keyframeInput == null) return;
 
-        // 2. 图生视频:关键帧 + 「动作描述」
         System.out.println("\n② 图生视频:让关键帧动起来(约 1~3 分钟)...");
         VideoClient video = new VideoClient();
         String taskId = video.submitImageToVideo(keyframeInput, prompt.motion(), duration);
@@ -165,7 +242,7 @@ public class Main {
                 }
             }
             System.out.println("关键帧来源:");
-            System.out.println("  · 粘贴图片文件路径 或 网址(https://...)");
+            System.out.println("  · 粘贴图片文件路径 或 网址(https://... 结尾是 .jpg/.png 的图片)");
             if (!materialsImages.isEmpty()) System.out.println("  · 输入序号,选 materials/ 里的图");
             System.out.println("  · 直接回车 → 让 AI 文生图");
             System.out.print("> ");
