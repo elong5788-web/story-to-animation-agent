@@ -22,18 +22,17 @@ public class Main {
     static final String FFMPEG = "C:/Users/elong258/ffmpeg/bin/ffmpeg.exe";
     static final String OUTPUT_DIR = "output";
 
-    /** 世界观(氛围)8 个子维度 */
+    /** 世界观(氛围)8 个子维度:强调(色调/光线/尺度/奇观)+ 弱化(基调/神秘感/气象/文化) */
     record WorldBuilding(String tone, String scale, String mystery, String wonder,
                          String palette, String lighting, String weather, String culture) {
+        /** 强调维度:给画面/8维度生成用,只含色调光线尺度奇观 */
+        String toCoreText() {
+            return "色调:" + palette + ",光线:" + lighting + ",尺度:" + scale + ",奇观:" + wonder;
+        }
+        /** 全部维度:给用户看 */
         String toText() {
-            return "世界观基调:" + tone
-                    + "\n宏大尺度:" + scale
-                    + "\n神秘感:" + mystery
-                    + "\n独有奇观:" + wonder
-                    + "\n色调系统:" + palette
-                    + "\n光线性质:" + lighting
-                    + "\n自然气象:" + weather
-                    + "\n文化符号:" + culture;
+            return "色调:" + palette + ",光线:" + lighting + ",尺度:" + scale + ",奇观:" + wonder
+                    + ",基调:" + tone + ",神秘感:" + mystery + ",气象:" + weather + ",文化:" + culture;
         }
     }
 
@@ -68,13 +67,14 @@ public class Main {
             + "东方玄幻仙侠 / 西方奇幻史诗 / 武侠水墨 / 科幻赛博朋克 / 都市写实 / 末世废土 / 动漫二次元 / 像素风。"
             + "只输出 JSON,不要任何解释。";
 
-    /** 世界观构建师:生成氛围 8 个子维度,贴合作品、别编造 */
+    /** 世界观构建师:强调维度写足,弱化维度简短,别编造 */
     static final String WORLD_PROMPT = "你是一个奇幻世界观构建师。"
             + "请根据用户输入,构建这个世界的「氛围」,用 JSON 输出,格式严格为:"
-            + "{\"tone\":\"世界观基调\",\"scale\":\"宏大尺度\",\"mystery\":\"神秘感\",\"wonder\":\"独有奇观\","
-            + "\"palette\":\"色调系统\",\"lighting\":\"光线性质\",\"weather\":\"自然气象\",\"culture\":\"文化符号\"}。"
-            + "每个字段写 1~2 句,要有画面感,但要贴合作品原意,不要编造原文没有的设定。"
-            + "只输出 JSON,不要任何解释。";
+            + "{\"tone\":\"基调\",\"scale\":\"尺度\",\"mystery\":\"神秘感\",\"wonder\":\"奇观\","
+            + "\"palette\":\"色调\",\"lighting\":\"光线\",\"weather\":\"气象\",\"culture\":\"文化\"}。"
+            + "重点字段(写 1~2 句、有画面感):palette 色调、lighting 光线、scale 尺度、wonder 奇观。"
+            + "次要字段(只要几个词):tone 基调、mystery 神秘感、weather 气象、culture 文化。"
+            + "贴合作品原意,不要编造原文没有的设定。只输出 JSON。";
 
     /** 提示词工程师:在已锁定世界观基础上,拆 8 个画面/动作维度 */
     static final String EXPANDER_PROMPT = "你是一个专业的 AI 视频提示词工程师。"
@@ -203,15 +203,13 @@ public class Main {
     /** 世界观审查:用户必须满意,可加文字填补优化 */
     static WorldBuilding reviewWorldLoop(Scanner sc, DeepSeekClient ds, String input, WorldBuilding world) throws Exception {
         while (true) {
-            System.out.println("\n===== 世界观设定(请审查,满意才继续)=====");
-            System.out.println("【基调】" + world.tone());
-            System.out.println("【尺度】" + world.scale());
-            System.out.println("【神秘感】" + world.mystery());
-            System.out.println("【奇观】" + world.wonder());
+            System.out.println("\n===== 氛围设定(重点维度,请审查)=====");
             System.out.println("【色调】" + world.palette());
             System.out.println("【光线】" + world.lighting());
-            System.out.println("【气象】" + world.weather());
-            System.out.println("【文化】" + world.culture());
+            System.out.println("【尺度】" + world.scale());
+            System.out.println("【奇观】" + world.wonder());
+            System.out.println("(次要氛围已自动生成:基调[" + world.tone() + "] 神秘感[" + world.mystery()
+                    + "] 气象[" + world.weather() + "] 文化[" + world.culture() + "])");
             System.out.println("  · y = 满意,锁定这个世界");
             System.out.println("  · r = 换一个完全不同的世界");
             System.out.println("  · 其他 = 你补充的文字,用来优化这个世界");
@@ -235,7 +233,7 @@ public class Main {
 
     /** 基于世界观,拆 8 个画面/动作维度 */
     static ShotDesign generatePrompt(DeepSeekClient ds, String input, WorldBuilding world) throws Exception {
-        String prompt = EXPANDER_PROMPT.formatted(world.toText());
+        String prompt = EXPANDER_PROMPT.formatted(world.toCoreText());
         String reply = ds.chat(prompt, input);
         String json = StoryboardParser.stripCodeFence(reply);
         try {
