@@ -306,28 +306,48 @@ public class Main {
         }
     }
 
-    /** 短片:首帧 + 尾帧 → 首尾帧生视频 */
+    /** 短片:用户提供图 → 图生视频/首尾帧;没图 → 纯文生视频 */
     static void generateShortVideo(Scanner sc, ShotDesign d, WorldBuilding world, String stamp) throws Exception {
         int duration = Config.getInt("DURATION", 5);
         String scene = d.scene(world.toText());
         String motion = d.motion();
 
-        // 1. 首帧(用户提供或 AI 文生图)
-        String firstFrame = askForKeyframe(sc, scene);
-        if (firstFrame == null) return;
+        // 可选:用户提供首帧/尾帧图
+        String first = askOptionalImage(sc, "首帧图(可选,回车则纯文生视频)");
+        String last = null;
+        if (first != null) {
+            last = askOptionalImage(sc, "尾帧图(可选,回车则只用首帧)");
+        }
 
-        // 2. 尾帧(用户提供或 AI 基于首帧图生图,保证连贯)
-        String lastFrame = askForLastFrame(sc, firstFrame, motion);
-        if (lastFrame == null) return;
-
-        // 3. 首尾帧生视频
-        System.out.println("\n③ 首尾帧生视频(约 1~3 分钟)...");
         VideoClient video = new VideoClient();
-        String taskId = video.submitFirstLastFrame(firstFrame, lastFrame, motion, duration);
+        String taskId;
+        if (first == null) {
+            System.out.println("\n生成视频(纯文生视频,约 1~3 分钟)...");
+            taskId = video.submit(scene, duration);
+        } else if (last == null) {
+            System.out.println("\n生成视频(图生视频,约 1~3 分钟)...");
+            taskId = video.submitImageToVideo(first, motion, duration);
+        } else {
+            System.out.println("\n生成视频(首尾帧,约 1~3 分钟)...");
+            taskId = video.submitFirstLastFrame(first, last, motion, duration);
+        }
         String url = video.waitForVideo(taskId);
         Path out = Path.of(OUTPUT_DIR, "video-" + stamp + ".mp4");
         video.download(url, out);
         System.out.println("视频已生成: " + out.toAbsolutePath());
+    }
+
+    /** 可选图片:粘贴路径/网址,回车返回 null(跳过) */
+    static String askOptionalImage(Scanner sc, String label) throws Exception {
+        System.out.println("\n" + label);
+        System.out.print("  (粘贴路径/网址,回车跳过) > ");
+        String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
+        if (answer.isBlank()) return null;
+        if (answer.startsWith("http://") || answer.startsWith("https://")) return answer;
+        Path p = Path.of(normalizePath(answer));
+        if (Files.exists(p) && Files.isRegularFile(p)) return ImageClient.toDataUrl(p);
+        System.out.println("  没找到路径,按跳过处理");
+        return null;
     }
 
     /** 尾帧:用户提供,或 AI 基于首帧图生图(保持同一角色场景),可反复改 */
