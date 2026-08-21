@@ -307,31 +307,20 @@ public class Main {
         }
     }
 
-    /** 短片:用户提供图 → 图生视频/首尾帧;没图 → 纯文生视频 */
+    /** 短片:关键帧(用户提供 或 AI 文生图给你看)→ 图生视频 */
     static void generateShortVideo(Scanner sc, ShotDesign d, WorldBuilding world, String stamp) throws Exception {
         int duration = Config.getInt("DURATION", 5);
         String scene = d.scene();
         String motion = d.motion();
 
-        // 可选:用户提供首帧/尾帧图
-        String first = askOptionalImage(sc, "首帧图(可选,回车则纯文生视频)");
-        String last = null;
-        if (first != null) {
-            last = askOptionalImage(sc, "尾帧图(可选,回车则只用首帧)");
-        }
+        // 1. 关键帧:用户提供图,或 AI 文生图(生成后给你看,满意才继续)
+        String keyframe = askForKeyframe(sc, scene);
+        if (keyframe == null) return;
 
+        // 2. 图生视频
+        System.out.println("\n生成视频(图生视频,约 1~3 分钟)...");
         VideoClient video = new VideoClient();
-        String taskId;
-        if (first == null) {
-            System.out.println("\n生成视频(纯文生视频,约 1~3 分钟)...");
-            taskId = video.submit(scene + "," + motion, duration);
-        } else if (last == null) {
-            System.out.println("\n生成视频(图生视频,约 1~3 分钟)...");
-            taskId = video.submitImageToVideo(first, motion, duration);
-        } else {
-            System.out.println("\n生成视频(首尾帧,约 1~3 分钟)...");
-            taskId = video.submitFirstLastFrame(first, last, motion, duration);
-        }
+        String taskId = video.submitImageToVideo(keyframe, motion, duration);
         String url = video.waitForVideo(taskId);
         Path out = Path.of(OUTPUT_DIR, "video-" + stamp + ".mp4");
         video.download(url, out);
