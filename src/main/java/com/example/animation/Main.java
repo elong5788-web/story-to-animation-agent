@@ -18,11 +18,13 @@ public class Main {
     static final String FFMPEG = "C:/Users/elong258/ffmpeg/bin/ffmpeg.exe";
     static final String OUTPUT_DIR = "output";
 
-    /** DeepSeek 角色:把一句话修饰成视频画面描述 */
-    static final String EXPANDER_PROMPT = "你是一个 AI 视频创作助手。"
-            + "请把用户的一句话修饰成一段具体、可视化的视频画面描述(80 字左右),"
-            + "包含场景、氛围、光线、细节,便于视频生成模型理解。"
-            + "只输出这一段描述,不要任何解释或多余内容。";
+    /** DeepSeek 角色:专业提示词工程师,把一句话扩写成高质量视频提示词 */
+    static final String EXPANDER_PROMPT = "你是一个专业的 AI 视频提示词工程师。"
+            + "请把用户的一句话,扩写成一段高质量的文生视频提示词,必须包含这些要素:"
+            + "主体(谁/什么,外貌细节)、动作(在做什么)、场景(在哪,环境细节)、"
+            + "镜头(景别如远景/特写,运镜如缓慢推近/平移)、光影氛围、"
+            + "风格(如电影感/写实/水墨/赛博朋克)、画质(如4K、超高清、细节丰富)。"
+            + "直接输出这段提示词(80~150字),不要任何解释或多余内容。";
 
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
