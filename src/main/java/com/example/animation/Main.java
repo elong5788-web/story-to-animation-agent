@@ -76,12 +76,9 @@ public class Main {
         // 1. 输入
         String fromFile = readStory(args);
         System.out.println("当前 story.txt: " + fromFile);
-        System.out.println("输入你想生成的画面(回车用上面的;可粘贴多行小说片段,空行结束): ");
+        System.out.println("输入画面(回车用上面的;可粘贴多行文字,或输入 .txt 文件路径;空行结束): ");
         String typed = readRest(sc);
-        String input = typed.isBlank() ? fromFile : typed;
-        if (!typed.isBlank()) {
-            Files.writeString(Path.of("story.txt"), typed, StandardCharsets.UTF_8);
-        }
+        String input = resolveInput(typed, fromFile);
         System.out.println("你的输入: " + input);
 
         // 2. 选模式
@@ -362,6 +359,25 @@ public class Main {
             sb.append(line).append("\n");
         }
         return sb.toString().trim();
+    }
+
+    /** 解析输入:空则用默认;是文件路径则读文件;否则当粘贴文字 */
+    static String resolveInput(String typed, String fromFile) throws Exception {
+        if (typed.isBlank()) return fromFile;
+        // 单行且是存在的文件 → 读文件内容
+        if (!typed.contains("\n")) {
+            try {
+                Path p = Path.of(typed);
+                if (Files.exists(p) && Files.isRegularFile(p)) {
+                    System.out.println("(已读取文件: " + p + ")");
+                    return Files.readString(p, StandardCharsets.UTF_8).trim();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        // 否则当作粘贴文字,存进 story.txt
+        Files.writeString(Path.of("story.txt"), typed, StandardCharsets.UTF_8);
+        return typed;
     }
 
     static String readStory(String[] args) throws Exception {
