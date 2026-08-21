@@ -81,12 +81,17 @@ public class Main {
     static VideoPrompt generatePrompt(DeepSeekClient ds, String input) throws Exception {
         String reply = ds.chat(EXPANDER_PROMPT, input);
         String json = StoryboardParser.stripCodeFence(reply);
-        JsonNode node = mapper.readTree(json);
-        String scene = node.path("scene").asText("");
-        String motion = node.path("motion").asText("");
-        if (scene.isBlank()) scene = input;      // 解析失败兜底
-        if (motion.isBlank()) motion = scene;
-        return new VideoPrompt(scene, motion);
+        try {
+            JsonNode node = mapper.readTree(json);
+            String scene = node.path("scene").asText("");
+            String motion = node.path("motion").asText("");
+            if (scene.isBlank()) scene = json;
+            if (motion.isBlank()) motion = scene;
+            return new VideoPrompt(scene, motion);
+        } catch (Exception e) {
+            // JSON 解析失败:整段文字同时当画面和动作用
+            return new VideoPrompt(json, json);
+        }
     }
 
     /** 短片:让用户审查两段提示词,可反复修改 */
