@@ -63,7 +63,7 @@ public class Main {
             String description = ds.chat(EXPANDER_PROMPT, input);
             description = reviewPromptLoop(sc, ds, input, description);
             if (description == null) return;
-            generateShortVideo(description, stamp);
+            generateShortVideo(sc, description, stamp);
         }
     }
 
@@ -111,19 +111,20 @@ public class Main {
         }
     }
 
-    /** 短片:文生图(关键帧)→ 图生视频 */
-    static void generateShortVideo(String description, String stamp) throws Exception {
+    /** 短片:关键帧(用户提供或 AI 生成)→ 图生视频 */
+    static void generateShortVideo(Scanner sc, String description, String stamp) throws Exception {
         int duration = Config.getInt("DURATION", 5);
 
-        // 1. 文生图:生成关键帧
-        System.out.println("\n① 文生图:生成关键帧(约 10~30 秒)...");
-        ImageClient image = new ImageClient();
-        String keyframeUrl = image.textToImage(description);
-        Path keyframe = Path.of(OUTPUT_DIR, "keyframe-" + stamp + ".jpg");
-        image.download(keyframeUrl, keyframe);
-        System.out.println("   关键帧已生成: " + keyframe);
+        // 1. 确定关键帧:优先用户提供的图,否则 AI 文生图(带确认)
+        Path keyframe = askForUserImage(sc);
+        if (keyframe == null) {
+            keyframe = generateKeyframeWithReview(sc, description);
+            if (keyframe == null) return;   // 用户取消
+        } else {
+            System.out.println("\n使用你的参考图: " + keyframe);
+        }
 
-        // 2. 图生视频:关键帧 + 动作 → 视频
+        // 2. 图生视频:文字是"动作描述",告诉视频模型怎么动
         System.out.println("\n② 图生视频:让关键帧动起来(约 1~3 分钟)...");
         String dataUrl = ImageClient.toDataUrl(keyframe);
         VideoClient video = new VideoClient();
@@ -132,6 +133,55 @@ public class Main {
         Path out = Path.of(OUTPUT_DIR, "video-" + stamp + ".mp4");
         video.download(url, out);
         System.out.println("视频已生成: " + out.toAbsolutePath());
+    }
+
+    /** 列出 materials/ 里的图片让用户选;回车返回 null(让 AI 生成) */
+    static Path askForUserImage(Scanner sc) throws Exception {
+        Path dir = Path.of("materials");
+        List<Path> images = new ArrayList<>();
+        if (Files.exists(dir)) {
+            try (var stream = Files.list(dir)) {
+                stream.filter(p -> {
+                    String n = p.getFileName().toString().toLowerCase();
+                    return n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".webp");
+                }).forEach(images::add);
+            }
+        }
+        if (images.isEmpty()) {
+            return null;
+        }
+        System.out.println("\nmaterials/ 里有这些图:");
+        for (int i = 0; i < images.size(); i++) {
+            System.out.println("  " + (i + 1) + ". " + images.get(i).getFileName());
+        }
+        System.out.print("输入序号用这张图,或回车让 AI 生成: ");
+        String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
+        if (answer.isBlank()) return null;
+        try {
+            int idx = Integer.parseInt(answer) - 1;
+            if (idx >= 0 && idx < images.size()) return images.get(idx);
+        } catch (NumberFormatException ignored) {
+        }
+        System.out.println("无效输入,改用 AI 生成");
+        return null;
+    }
+
+    /** 文生图 + 用户确认 */
+    static Path generateKeyframeWithReview(Scanner sc, String description) throws Exception {
+        ImageClient image = new ImageClient();
+        while (true) {
+            System.out.println("\n① 文生图:生成关键帧(约 10~30 秒)...");
+            String keyframeUrl = image.textToImage(description);
+            Path keyframe = Path.of(OUTPUT_DIR, "keyframe-" + timestamp() + ".jpg");
+            image.download(keyframeUrl, keyframe);
+            System.out.println("   关键帧已生成: " + keyframe);
+            System.out.println("   (可打开这个文件查看)");
+            System.out.print("   满意吗?(y 满意 / r 重新生成 / n 取消): ");
+            String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
+            if (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes")) return keyframe;
+            if (answer.equalsIgnoreCase("n") || answer.equalsIgnoreCase("no") || answer.equals("取消")) return null;
+            // r 或其他 → 重新生成
+        }
     }
 
     /** 长片:逐镜头生成 + 拼接 */
