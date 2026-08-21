@@ -241,20 +241,71 @@ public class Main {
         }
     }
 
-    /** 短片:关键帧(用户提供或 AI 生成)→ 图生视频 */
+    /** 短片:首帧 + 尾帧 → 首尾帧生视频 */
     static void generateShortVideo(Scanner sc, ShotDesign d, WorldBuilding world, String stamp) throws Exception {
         int duration = Config.getInt("DURATION", 5);
+        String scene = d.scene(world.toText());
+        String motion = d.motion();
 
-        String keyframeInput = askForKeyframe(sc, d.scene(world.toText()));
-        if (keyframeInput == null) return;
+        // 1. 首帧(用户提供或 AI 文生图)
+        String firstFrame = askForKeyframe(sc, scene);
+        if (firstFrame == null) return;
 
-        System.out.println("\n② 图生视频:让关键帧动起来(约 1~3 分钟)...");
+        // 2. 尾帧(用户提供或 AI 基于首帧图生图,保证连贯)
+        String lastFrame = askForLastFrame(sc, firstFrame, motion);
+        if (lastFrame == null) return;
+
+        // 3. 首尾帧生视频
+        System.out.println("\n③ 首尾帧生视频(约 1~3 分钟)...");
         VideoClient video = new VideoClient();
-        String taskId = video.submitImageToVideo(keyframeInput, d.motion(), duration);
+        String taskId = video.submitFirstLastFrame(firstFrame, lastFrame, motion, duration);
         String url = video.waitForVideo(taskId);
         Path out = Path.of(OUTPUT_DIR, "video-" + stamp + ".mp4");
         video.download(url, out);
         System.out.println("视频已生成: " + out.toAbsolutePath());
+    }
+
+    /** 尾帧:用户提供,或 AI 基于首帧图生图(保持同一角色场景),可反复改 */
+    static String askForLastFrame(Scanner sc, String firstFrameDataUrl, String motion) throws Exception {
+        ImageClient image = new ImageClient();
+        while (true) {
+            System.out.println("\n尾帧(终点画面):");
+            System.out.println("  · 粘贴尾帧图片路径/网址");
+            System.out.println("  · 直接回车 → AI 基于首帧生成连贯尾帧");
+            System.out.print("> ");
+            String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
+
+            if (answer.isBlank()) {
+                // AI 生成尾帧:图生图(以首帧为参考)
+                String prompt = "保持同一角色、服装和场景不变,只改变动作和姿势:" + motion;
+                String url = image.imageToImage(prompt, firstFrameDataUrl);
+                Path tail = Path.of(OUTPUT_DIR, "tail-" + timestamp() + ".jpg");
+                image.download(url, tail);
+                System.out.println("  尾帧已生成: " + tail + " (可打开查看)");
+                System.out.print("  满意吗?(y 满意 / n 取消 / 其他=你的修改意见,让 AI 改): ");
+                String a2 = sc.hasNextLine() ? sc.nextLine().trim() : "";
+                if (a2.equalsIgnoreCase("y") || a2.equalsIgnoreCase("yes")) {
+                    return ImageClient.toDataUrl(tail);
+                }
+                if (a2.equalsIgnoreCase("n") || a2.equalsIgnoreCase("no") || a2.equals("取消")) {
+                    return null;
+                }
+                // 其他 = 修改意见,带着意见重新生成尾帧
+                String feedback = (a2 + "\n" + readRest(sc)).trim();
+                motion = feedback;
+                System.out.println("  带着你的意见重新生成尾帧...");
+                continue;
+            }
+            // 用户提供尾帧图
+            if (answer.startsWith("http://") || answer.startsWith("https://")) {
+                return answer;
+            }
+            Path p = Path.of(normalizePath(answer));
+            if (Files.exists(p) && Files.isRegularFile(p)) {
+                return ImageClient.toDataUrl(p);
+            }
+            System.out.println("  没找到路径,再试\n");
+        }
     }
 
     /** 关键帧来源:粘贴路径/网址,或序号选 materials/,或回车 AI 生成 */

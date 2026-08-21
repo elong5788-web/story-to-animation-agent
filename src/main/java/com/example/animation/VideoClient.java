@@ -42,6 +42,18 @@ public class VideoClient {
         return submitTask(contentJson, durationSeconds);
     }
 
+    /** 首尾帧生视频:两张图定义起点和终点 */
+    public String submitFirstLastFrame(String firstFrameUrl, String lastFrameUrl, String prompt, int durationSeconds) throws Exception {
+        String contentJson = """
+                [
+                  {"type": "text", "text": "%s"},
+                  {"type": "image_url", "image_url": {"url": "%s"}, "role": "first_frame"},
+                  {"type": "image_url", "image_url": {"url": "%s"}, "role": "last_frame"}
+                ]
+                """.formatted(escape(prompt), escape(firstFrameUrl), escape(lastFrameUrl));
+        return submitTask(contentJson, durationSeconds);
+    }
+
     private String submitTask(String contentJson, int durationSeconds) throws Exception {
         String apiKey = Config.get("ARK_API_KEY");
         if (apiKey == null || apiKey.isBlank()) {

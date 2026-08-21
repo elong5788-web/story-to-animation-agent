@@ -13,8 +13,8 @@ import java.time.Duration;
 import java.util.Base64;
 
 /**
- * 负责调 Seedream(火山引擎 Ark)文生图:文字 → 图片。
- * 接口是同步的:直接返回图片 URL(不用像视频那样轮询任务)。
+ * 负责调 Seedream(火山引擎 Ark)图片生成:文生图 + 图生图。
+ * 接口是同步的:直接返回图片 URL。
  */
 public class ImageClient {
 
@@ -26,24 +26,33 @@ public class ImageClient {
             .build();
     private final ObjectMapper mapper = new ObjectMapper();
 
-    /** 文生图:返回图片 URL */
+    /** 文生图:文字 → 图片 URL */
     public String textToImage(String prompt) throws Exception {
+        String body = """
+                {"model": "%s", "prompt": "%s", "size": "%s", "watermark": false}
+                """.formatted(MODEL, escape(prompt), imageSize());
+        return generate(body);
+    }
+
+    /** 图生图:以参考图为底,按提示词修改(用于生成连贯的尾帧) */
+    public String imageToImage(String prompt, String referenceDataUrl) throws Exception {
+        String body = """
+                {"model": "%s", "prompt": "%s", "image": ["%s"], "size": "%s", "watermark": false}
+                """.formatted(MODEL, escape(prompt), referenceDataUrl, imageSize());
+        return generate(body);
+    }
+
+    private String imageSize() {
+        String size = Config.get("IMAGE_SIZE");
+        return (size == null || size.isBlank()) ? "2K" : size;
+    }
+
+    /** 提交并解析出图片 URL */
+    private String generate(String body) throws Exception {
         String apiKey = Config.get("ARK_API_KEY");
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("请在 config.properties 里填 ARK_API_KEY");
         }
-        String size = Config.get("IMAGE_SIZE");
-        if (size == null || size.isBlank()) size = "2K";
-
-        String body = """
-                {
-                  "model": "%s",
-                  "prompt": "%s",
-                  "size": "%s",
-                  "watermark": false
-                }
-                """.formatted(MODEL, escape(prompt), size);
-
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(API_URL))
                 .header("Authorization", "Bearer " + apiKey)
@@ -55,7 +64,6 @@ public class ImageClient {
         if (resp.statusCode() != 200) {
             throw new IllegalStateException("Seedream 生成图片失败,HTTP " + resp.statusCode() + ": " + resp.body());
         }
-
         JsonNode node = mapper.readTree(resp.body());
         JsonNode data = node.path("data");
         if (!data.isArray() || data.isEmpty()) {
@@ -78,7 +86,7 @@ public class ImageClient {
         Files.write(dest, resp.body());
     }
 
-    /** 把本地图片转成 base64 data URL(给图生视频用,避免图片 URL 过期) */
+    /** 本地图片转 base64 data URL */
     static String toDataUrl(Path imageFile) throws Exception {
         byte[] bytes = Files.readAllBytes(imageFile);
         String b64 = Base64.getEncoder().encodeToString(bytes);
