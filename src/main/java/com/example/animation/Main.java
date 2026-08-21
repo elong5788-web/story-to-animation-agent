@@ -21,11 +21,12 @@ public class Main {
     static final String FFMPEG = "C:/Users/elong258/ffmpeg/bin/ffmpeg.exe";
     static final String OUTPUT_DIR = "output";
 
-    /** DeepSeek 角色:把一句话拆成「画面描述 + 动作描述」两段,JSON 输出 */
+    /** DeepSeek 角色:把一句话拆成「画面描述 + 动作描述」两段,JSON 输出,要非常专业 */
     static final String EXPANDER_PROMPT = "你是一个专业的 AI 视频提示词工程师。"
             + "请把用户的一句话,拆成两段提示词,用 JSON 输出,格式严格为:{\"scene\":\"画面描述\",\"motion\":\"动作描述\"}。"
-            + "scene(画面描述,给文生图用):主体、场景、光影、风格、画质关键词,约80字。"
-            + "motion(动作描述,给图生视频用):动作、镜头运镜,约30字。"
+            + "scene(画面描述,给文生图用):主体外貌细节、场景环境、光影氛围、艺术风格、构图,"
+            + "并附英文画质关键词(如 4K, cinematic lighting, ultra-detailed, photorealistic, masterpiece),约150字,务必具体专业。"
+            + "motion(动作描述,给图生视频用):动作过程、镜头运镜(景别+运动方式)、节奏,约50字。"
             + "只输出 JSON,不要任何解释或多余内容。";
 
     /** 两段提示词 */
