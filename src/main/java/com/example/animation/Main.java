@@ -37,8 +37,15 @@ public class Main {
         }
     }
 
-    /** 两段提示词 */
-    record VideoPrompt(String scene, String motion) {
+    /** 画面/动作的 8 个细分维度 */
+    record ShotDesign(String subject, String clothing, String setting, String style, String quality,
+                      String camera, String narrative, String action) {
+        String scene(String worldText) {
+            return worldText + "," + subject + "," + clothing + "," + setting + "," + style + "," + quality;
+        }
+        String motion() {
+            return action + "," + camera + "," + narrative;
+        }
     }
 
     private static final ObjectMapper mapper = new ObjectMapper();
@@ -60,14 +67,16 @@ public class Main {
             + "culture=建筑、文字、图腾、种族等文化标志。"
             + "只输出 JSON,不要任何解释。";
 
-    /** 提示词工程师:在已锁定世界观基础上,拆画面 + 动作 */
+    /** 提示词工程师:在已锁定世界观基础上,拆 8 个画面/动作维度 */
     static final String EXPANDER_PROMPT = "你是一个专业的 AI 视频提示词工程师。"
             + "已锁定的世界观氛围如下:\n%s\n"
-            + "请在这个世界观基础上,把用户的一句话拆成两段提示词,用 JSON 输出,格式严格为:{\"scene\":\"画面描述\",\"motion\":\"动作描述\"}。"
-            + "scene(画面描述,给文生图用):主体外貌细节、服装、场景环境、延续上述世界观氛围、艺术风格、构图,"
-            + "并附英文画质关键词(如 4K, cinematic lighting, ultra-detailed, masterpiece),约150字,务必具体专业。"
-            + "motion(动作描述,给图生视频用):动作过程、镜头运镜(景别+运动方式)、节奏,约50字。"
-            + "只输出 JSON,不要任何解释或多余内容。";
+            + "请在这个世界观基础上,把用户的一句话拆成 8 个维度,用 JSON 输出,格式严格为:"
+            + "{\"subject\":\"主体\",\"clothing\":\"服装\",\"setting\":\"场景\",\"style\":\"风格\",\"quality\":\"画质\","
+            + "\"camera\":\"镜头\",\"narrative\":\"叙事\",\"action\":\"动作\"}。"
+            + "各字段写什么:subject=人物/主体外貌、表情、姿势;clothing=服装款式材质颜色配饰;"
+            + "setting=具体地点环境;style=艺术风格(水墨/电影感);quality=画质关键词(4K, cinematic, ultra-detailed);"
+            + "camera=景别/角度/运镜/焦点/构图;narrative=故事感/情绪张力;action=动作过程/节奏。"
+            + "每个字段写一两句具体内容。只输出 JSON,不要任何解释。";
 
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
@@ -108,12 +117,12 @@ public class Main {
             world = reviewWorldLoop(sc, ds, input, world);
             if (world == null) return;
 
-            // 后续:基于世界观,拆画面 + 动作
-            VideoPrompt prompt = generatePrompt(ds, input, world);
-            prompt = reviewPromptLoop(sc, ds, input, world, prompt);
-            if (prompt == null) return;
+            // 后续:基于世界观,拆 8 个画面/动作维度
+            ShotDesign design = generatePrompt(ds, input, world);
+            design = reviewPromptLoop(sc, ds, input, world, design);
+            if (design == null) return;
 
-            generateShortVideo(sc, prompt, stamp);
+            generateShortVideo(sc, design, world, stamp);
         }
     }
 
@@ -166,45 +175,52 @@ public class Main {
         }
     }
 
-    /** 基于世界观,拆画面 + 动作 */
-    static VideoPrompt generatePrompt(DeepSeekClient ds, String input, WorldBuilding world) throws Exception {
+    /** 基于世界观,拆 8 个画面/动作维度 */
+    static ShotDesign generatePrompt(DeepSeekClient ds, String input, WorldBuilding world) throws Exception {
         String prompt = EXPANDER_PROMPT.formatted(world.toText());
         String reply = ds.chat(prompt, input);
         String json = StoryboardParser.stripCodeFence(reply);
         try {
-            JsonNode node = mapper.readTree(json);
-            String scene = node.path("scene").asText("");
-            String motion = node.path("motion").asText("");
-            if (scene.isBlank()) scene = json;
-            if (motion.isBlank()) motion = scene;
-            return new VideoPrompt(scene, motion);
+            JsonNode n = mapper.readTree(json);
+            return new ShotDesign(
+                    n.path("subject").asText(""), n.path("clothing").asText(""),
+                    n.path("setting").asText(""), n.path("style").asText(""),
+                    n.path("quality").asText(""), n.path("camera").asText(""),
+                    n.path("narrative").asText(""), n.path("action").asText(""));
         } catch (Exception e) {
-            return new VideoPrompt(json, json);
+            return new ShotDesign(json, "", "", "", "", "", "", "");
         }
     }
 
-    /** 短片:审查画面 + 动作两段提示词 */
-    static VideoPrompt reviewPromptLoop(Scanner sc, DeepSeekClient ds, String input, WorldBuilding world, VideoPrompt prompt) throws Exception {
+    /** 短片:审查 8 个画面/动作维度 */
+    static ShotDesign reviewPromptLoop(Scanner sc, DeepSeekClient ds, String input, WorldBuilding world, ShotDesign d) throws Exception {
         while (true) {
-            System.out.println("\n【画面描述】(文生图用,画什么):");
-            System.out.println("  " + prompt.scene());
-            System.out.println("【动作描述】(图生视频用,怎么动):");
-            System.out.println("  " + prompt.motion());
+            System.out.println("\n===== 画面与动作维度(请审查)=====");
+            System.out.println("【主体】" + d.subject());
+            System.out.println("【服装】" + d.clothing());
+            System.out.println("【场景】" + d.setting());
+            System.out.println("【风格】" + d.style());
+            System.out.println("【画质】" + d.quality());
+            System.out.println("【镜头】" + d.camera());
+            System.out.println("【叙事】" + d.narrative());
+            System.out.println("【动作】" + d.action());
             System.out.println("  · y=满意 / n=取消 / r=换一个 / 其他=修改意见");
             System.out.print("> ");
             String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
-            if (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes")) return prompt;
+            if (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes")) return d;
             if (answer.equalsIgnoreCase("n") || answer.equalsIgnoreCase("no") || answer.equals("取消")) {
                 System.out.println("已取消。");
                 return null;
             }
             if (answer.equalsIgnoreCase("r") || answer.equals("换一个")) {
-                prompt = generatePrompt(ds, input + "\n(请给和上次不同的版本)", world);
+                d = generatePrompt(ds, input + "\n(请给和上次不同的版本)", world);
                 continue;
             }
             String feedback = (answer + "\n" + readRest(sc)).trim();
-            prompt = generatePrompt(ds, input + "\n\n(上次画面:[" + prompt.scene()
-                    + "],动作:[" + prompt.motion() + "],用户意见:\n" + feedback + "\n请重新拆分。)", world);
+            d = generatePrompt(ds, input + "\n\n(上次维度:主体[" + d.subject() + "],服装[" + d.clothing()
+                    + "],场景[" + d.setting() + "],风格[" + d.style() + "],画质[" + d.quality()
+                    + "],镜头[" + d.camera() + "],叙事[" + d.narrative() + "],动作[" + d.action()
+                    + "],用户意见:\n" + feedback + "\n请重新生成。)", world);
         }
     }
 
@@ -226,15 +242,15 @@ public class Main {
     }
 
     /** 短片:关键帧(用户提供或 AI 生成)→ 图生视频 */
-    static void generateShortVideo(Scanner sc, VideoPrompt prompt, String stamp) throws Exception {
+    static void generateShortVideo(Scanner sc, ShotDesign d, WorldBuilding world, String stamp) throws Exception {
         int duration = Config.getInt("DURATION", 5);
 
-        String keyframeInput = askForKeyframe(sc, prompt.scene());
+        String keyframeInput = askForKeyframe(sc, d.scene(world.toText()));
         if (keyframeInput == null) return;
 
         System.out.println("\n② 图生视频:让关键帧动起来(约 1~3 分钟)...");
         VideoClient video = new VideoClient();
-        String taskId = video.submitImageToVideo(keyframeInput, prompt.motion(), duration);
+        String taskId = video.submitImageToVideo(keyframeInput, d.motion(), duration);
         String url = video.waitForVideo(taskId);
         Path out = Path.of(OUTPUT_DIR, "video-" + stamp + ".mp4");
         video.download(url, out);
