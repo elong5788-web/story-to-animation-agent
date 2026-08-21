@@ -55,7 +55,7 @@ public class Main {
             String description = ds.chat(EXPANDER_PROMPT, input);
             description = reviewPromptLoop(sc, ds, input, description);
             if (description == null) return;
-            generateOneVideo(description, stamp);
+            generateShortVideo(description, stamp);
         }
     }
 
@@ -98,12 +98,23 @@ public class Main {
         }
     }
 
-    /** 短片:生成一个视频 */
-    static void generateOneVideo(String description, String stamp) throws Exception {
+    /** 短片:文生图(关键帧)→ 图生视频 */
+    static void generateShortVideo(String description, String stamp) throws Exception {
         int duration = Config.getInt("DURATION", 5);
-        System.out.println("\n开始生成视频(" + duration + " 秒,约 1~3 分钟)...");
+
+        // 1. 文生图:生成关键帧
+        System.out.println("\n① 文生图:生成关键帧(约 10~30 秒)...");
+        ImageClient image = new ImageClient();
+        String keyframeUrl = image.textToImage(description);
+        Path keyframe = Path.of(OUTPUT_DIR, "keyframe-" + stamp + ".jpg");
+        image.download(keyframeUrl, keyframe);
+        System.out.println("   关键帧已生成: " + keyframe);
+
+        // 2. 图生视频:关键帧 + 动作 → 视频
+        System.out.println("\n② 图生视频:让关键帧动起来(约 1~3 分钟)...");
+        String dataUrl = ImageClient.toDataUrl(keyframe);
         VideoClient video = new VideoClient();
-        String taskId = video.submit(description, duration);
+        String taskId = video.submitImageToVideo(dataUrl, description, duration);
         String url = video.waitForVideo(taskId);
         Path out = Path.of(OUTPUT_DIR, "video-" + stamp + ".mp4");
         video.download(url, out);
