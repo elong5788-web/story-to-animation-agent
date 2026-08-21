@@ -115,28 +115,64 @@ public class Main {
     static void generateShortVideo(Scanner sc, String description, String stamp) throws Exception {
         int duration = Config.getInt("DURATION", 5);
 
-        // 1. 确定关键帧:优先用户提供的图,否则 AI 文生图(带确认)
-        Path keyframe = askForUserImage(sc);
-        if (keyframe == null) {
-            keyframe = generateKeyframeWithReview(sc, description);
-            if (keyframe == null) return;   // 用户取消
-        } else {
-            System.out.println("\n使用你的参考图: " + keyframe);
-        }
+        // 1. 确定关键帧(用户给路径/网址,或 AI 生成)
+        String keyframeInput = askForKeyframe(sc, description);
+        if (keyframeInput == null) return;   // 用户取消
 
         // 2. 图生视频:文字是"动作描述",告诉视频模型怎么动
         System.out.println("\n② 图生视频:让关键帧动起来(约 1~3 分钟)...");
-        String dataUrl = ImageClient.toDataUrl(keyframe);
         VideoClient video = new VideoClient();
-        String taskId = video.submitImageToVideo(dataUrl, description, duration);
+        String taskId = video.submitImageToVideo(keyframeInput, description, duration);
         String url = video.waitForVideo(taskId);
         Path out = Path.of(OUTPUT_DIR, "video-" + stamp + ".mp4");
         video.download(url, out);
         System.out.println("视频已生成: " + out.toAbsolutePath());
     }
 
-    /** 列出 materials/ 里的图片让用户选;回车返回 null(让 AI 生成) */
-    static Path askForUserImage(Scanner sc) throws Exception {
+    /** 关键帧来源:粘贴图片路径/网址,或序号选 materials/,或回车 AI 生成。返回 URL/dataURL */
+    static String askForKeyframe(Scanner sc, String description) throws Exception {
+        List<Path> materialsImages = listMaterialsImages();
+        while (true) {
+            if (!materialsImages.isEmpty()) {
+                System.out.println("\nmaterials/ 里有图:");
+                for (int i = 0; i < materialsImages.size(); i++) {
+                    System.out.println("  " + (i + 1) + ". " + materialsImages.get(i).getFileName());
+                }
+            }
+            System.out.println("关键帧来源:");
+            System.out.println("  · 粘贴图片文件路径 或 网址(https://...)");
+            if (!materialsImages.isEmpty()) System.out.println("  · 输入序号,选 materials/ 里的图");
+            System.out.println("  · 直接回车 → 让 AI 文生图");
+            System.out.print("> ");
+            String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
+
+            if (answer.isBlank()) {
+                return aiKeyframeWithReview(sc, description);   // 可能返回 null(取消)
+            }
+            if (answer.startsWith("http://") || answer.startsWith("https://")) {
+                return answer;   // 直接用网址
+            }
+            // 序号 → materials/
+            if (!materialsImages.isEmpty()) {
+                try {
+                    int idx = Integer.parseInt(answer) - 1;
+                    if (idx >= 0 && idx < materialsImages.size()) {
+                        return ImageClient.toDataUrl(materialsImages.get(idx));
+                    }
+                } catch (NumberFormatException ignored) {
+                }
+            }
+            // 本地文件路径
+            Path p = Path.of(answer);
+            if (Files.exists(p) && Files.isRegularFile(p)) {
+                return ImageClient.toDataUrl(p);
+            }
+            System.out.println("  没找到这个路径或网址,再试一次\n");
+        }
+    }
+
+    /** 列出 materials/ 里的图片 */
+    static List<Path> listMaterialsImages() throws Exception {
         Path dir = Path.of("materials");
         List<Path> images = new ArrayList<>();
         if (Files.exists(dir)) {
@@ -147,40 +183,27 @@ public class Main {
                 }).forEach(images::add);
             }
         }
-        if (images.isEmpty()) {
-            return null;
-        }
-        System.out.println("\nmaterials/ 里有这些图:");
-        for (int i = 0; i < images.size(); i++) {
-            System.out.println("  " + (i + 1) + ". " + images.get(i).getFileName());
-        }
-        System.out.print("输入序号用这张图,或回车让 AI 生成: ");
-        String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
-        if (answer.isBlank()) return null;
-        try {
-            int idx = Integer.parseInt(answer) - 1;
-            if (idx >= 0 && idx < images.size()) return images.get(idx);
-        } catch (NumberFormatException ignored) {
-        }
-        System.out.println("无效输入,改用 AI 生成");
-        return null;
+        return images;
     }
 
-    /** 文生图 + 用户确认 */
-    static Path generateKeyframeWithReview(Scanner sc, String description) throws Exception {
+    /** AI 文生图 + 用户确认,返回 dataURL(取消返回 null) */
+    static String aiKeyframeWithReview(Scanner sc, String description) throws Exception {
         ImageClient image = new ImageClient();
         while (true) {
             System.out.println("\n① 文生图:生成关键帧(约 10~30 秒)...");
-            String keyframeUrl = image.textToImage(description);
+            String url = image.textToImage(description);
             Path keyframe = Path.of(OUTPUT_DIR, "keyframe-" + timestamp() + ".jpg");
-            image.download(keyframeUrl, keyframe);
+            image.download(url, keyframe);
             System.out.println("   关键帧已生成: " + keyframe);
             System.out.println("   (可打开这个文件查看)");
             System.out.print("   满意吗?(y 满意 / r 重新生成 / n 取消): ");
             String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
-            if (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes")) return keyframe;
-            if (answer.equalsIgnoreCase("n") || answer.equalsIgnoreCase("no") || answer.equals("取消")) return null;
-            // r 或其他 → 重新生成
+            if (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes")) {
+                return ImageClient.toDataUrl(keyframe);
+            }
+            if (answer.equalsIgnoreCase("n") || answer.equalsIgnoreCase("no") || answer.equals("取消")) {
+                return null;
+            }
         }
     }
 
