@@ -67,7 +67,8 @@ public class VideoClient {
                   "model": "%s",
                   "content": %s,
                   "duration": %d,
-                  "resolution": "%s"
+                  "resolution": "%s",
+                  "generate_audio": false
                 }
                 """.formatted(MODEL, contentJson, durationSeconds, resolution);
 
