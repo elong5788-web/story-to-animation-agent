@@ -367,7 +367,7 @@ public class Main {
         // 单行且是存在的文件 → 读文件内容
         if (!typed.contains("\n")) {
             try {
-                Path p = Path.of(typed);
+                Path p = Path.of(normalizePath(typed));
                 if (Files.exists(p) && Files.isRegularFile(p)) {
                     System.out.println("(已读取文件: " + p + ")");
                     return Files.readString(p, StandardCharsets.UTF_8).trim();
@@ -378,6 +378,14 @@ public class Main {
         // 否则当作粘贴文字,存进 story.txt
         Files.writeString(Path.of("story.txt"), typed, StandardCharsets.UTF_8);
         return typed;
+    }
+
+    /** 把 Git Bash 风格路径 /c/Users/... 转成 Windows 的 C:/Users/... */
+    static String normalizePath(String s) {
+        if (s.length() >= 3 && s.charAt(0) == '/' && s.charAt(2) == '/') {
+            return Character.toUpperCase(s.charAt(1)) + ":" + s.substring(2);
+        }
+        return s;
     }
 
     static String readStory(String[] args) throws Exception {
