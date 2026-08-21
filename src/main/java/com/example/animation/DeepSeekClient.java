@@ -36,7 +36,7 @@ public class DeepSeekClient {
                     {"role": "system", "content": "%s"},
                     {"role": "user", "content": "%s"}
                   ],
-                  "temperature": 0.7
+                  "temperature": 1.0
                 }
                 """.formatted(MODEL, escape(systemPrompt), escape(userMessage));
 

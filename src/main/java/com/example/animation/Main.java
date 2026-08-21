@@ -25,14 +25,22 @@ public class Main {
             + "只输出这一段描述,不要任何解释或多余内容。";
 
     public static void main(String[] args) throws Exception {
-        String input = readStory(args);
         Scanner sc = new Scanner(System.in);
         Files.createDirectories(Path.of(OUTPUT_DIR));   // 确保输出文件夹存在
         String stamp = timestamp();                      // 本次运行的时间戳
 
+        // 1. 输入画面描述(可直接输入,回车则用 story.txt 里的)
+        String fromFile = readStory(args);
+        System.out.println("当前 story.txt: " + fromFile);
+        System.out.print("输入你想生成的画面(直接回车用上面的): ");
+        String typed = sc.hasNextLine() ? sc.nextLine().trim() : "";
+        String input = typed.isBlank() ? fromFile : typed;
+        if (!typed.isBlank()) {
+            Files.writeString(Path.of("story.txt"), typed, StandardCharsets.UTF_8);
+        }
         System.out.println("你的输入: " + input);
 
-        // 1. 选模式
+        // 2. 选模式
         String mode;
         while (true) {
             System.out.print("\n选模式: 1=短片(一个视频)  2=长片(多镜头拼成片)  > ");
@@ -66,6 +74,7 @@ public class Main {
             System.out.println("  " + description);
             System.out.println("  · 输入 y → 满意,生成视频");
             System.out.println("  · 输入 n → 取消");
+            System.out.println("  · 输入 r → 换一个不同的版本");
             System.out.println("  · 输入其他 → 当作修改意见,重新修饰");
             System.out.print("> ");
             String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
@@ -73,6 +82,10 @@ public class Main {
             if (answer.equalsIgnoreCase("n") || answer.equalsIgnoreCase("no") || answer.equals("取消")) {
                 System.out.println("已取消。");
                 return null;
+            }
+            if (answer.equalsIgnoreCase("r") || answer.equals("换一个")) {
+                description = ds.chat(EXPANDER_PROMPT, input + "\n\n(请给一个和上次完全不同的新版本)");
+                continue;
             }
             String userMsg = input + "\n\n(上一次修饰结果:[" + description + "],用户意见:" + answer + ",请重新修饰。)";
             description = ds.chat(EXPANDER_PROMPT, userMsg);
