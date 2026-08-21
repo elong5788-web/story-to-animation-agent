@@ -17,5 +17,11 @@ Thumbs.db
 *.mp4
 output/
 
+# 用户素材(图片等,不提交)
+materials/*.png
+materials/*.jpg
+materials/*.jpeg
+materials/*.webp
+
 # API 密钥配置(绝不提交)
 config.properties
