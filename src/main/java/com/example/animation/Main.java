@@ -76,8 +76,8 @@ public class Main {
             + "各字段写什么:subject=人物/主体外貌、表情、姿势;clothing=服装款式材质颜色配饰;"
             + "setting=具体地点环境;style=艺术风格(水墨/电影感);quality=画质关键词(4K, cinematic, ultra-detailed);"
             + "camera=景别/角度/运镜/焦点/构图;narrative=故事感/情绪张力;action=动作过程/节奏。"
-            + "内容必须唯美、积极、有诗意,严禁出现自杀、跳楼、暴力、血腥、死亡、恐怖等负面内容。"
-            + "每个字段写一两句具体内容。只输出 JSON,不要任何解释。";
+            + "这 8 个维度必须逻辑自洽、互相呼应:叙事要贴合主体和场景氛围,动作要由叙事和场景自然推导,"
+            + "前后不能矛盾或突兀。每个字段写一两句具体内容。只输出 JSON,不要任何解释。";
 
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
