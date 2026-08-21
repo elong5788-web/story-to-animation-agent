@@ -407,7 +407,7 @@ public class Main {
                 } catch (NumberFormatException ignored) {
                 }
             }
-            Path p = Path.of(answer);
+            Path p = Path.of(normalizePath(answer));
             if (Files.exists(p) && Files.isRegularFile(p)) {
                 return ImageClient.toDataUrl(p);
             }
