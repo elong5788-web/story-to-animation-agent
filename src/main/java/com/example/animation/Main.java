@@ -66,8 +66,8 @@ public class Main {
         // 1. 输入
         String fromFile = readStory(args);
         System.out.println("当前 story.txt: " + fromFile);
-        System.out.print("输入你想生成的画面(直接回车用上面的): ");
-        String typed = sc.hasNextLine() ? sc.nextLine().trim() : "";
+        System.out.println("输入你想生成的画面(回车用上面的;可粘贴多行小说片段,空行结束): ");
+        String typed = readRest(sc);
         String input = typed.isBlank() ? fromFile : typed;
         if (!typed.isBlank()) {
             Files.writeString(Path.of("story.txt"), typed, StandardCharsets.UTF_8);
@@ -152,8 +152,9 @@ public class Main {
                 world = generateWorld(ds, input + "\n(请给一个完全不同的世界)");
                 continue;
             }
-            // 其他 = 用户补充文字
-            world = generateWorld(ds, input + "\n\n(用户补充的世界观设定:" + answer + ")");
+            // 其他 = 用户补充文字(可多行,空行结束)
+            String feedback = (answer + "\n" + readRest(sc)).trim();
+            world = generateWorld(ds, input + "\n\n(用户补充的世界观设定:\n" + feedback + ")");
         }
     }
 
@@ -193,8 +194,9 @@ public class Main {
                 prompt = generatePrompt(ds, input + "\n(请给和上次不同的版本)", world);
                 continue;
             }
+            String feedback = (answer + "\n" + readRest(sc)).trim();
             prompt = generatePrompt(ds, input + "\n\n(上次画面:[" + prompt.scene()
-                    + "],动作:[" + prompt.motion() + "],用户意见:" + answer + ",请重新拆分。)", world);
+                    + "],动作:[" + prompt.motion() + "],用户意见:\n" + feedback + "\n请重新拆分。)", world);
         }
     }
 
@@ -339,6 +341,17 @@ public class Main {
 
     static String timestamp() {
         return LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
+    }
+
+    /** 读多行文字,直到空行(用于粘贴长文字/小说片段) */
+    static String readRest(Scanner sc) {
+        StringBuilder sb = new StringBuilder();
+        while (sc.hasNextLine()) {
+            String line = sc.nextLine();
+            if (line.isBlank()) break;
+            sb.append(line).append("\n");
+        }
+        return sb.toString().trim();
     }
 
     static String readStory(String[] args) throws Exception {
