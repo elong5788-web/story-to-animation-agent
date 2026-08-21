@@ -3,6 +3,7 @@ package com.example.animation;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -370,7 +371,7 @@ public class Main {
                 Path p = Path.of(normalizePath(typed));
                 if (Files.exists(p) && Files.isRegularFile(p)) {
                     System.out.println("(已读取文件: " + p + ")");
-                    return Files.readString(p, StandardCharsets.UTF_8).trim();
+                    return readTextFile(p);
                 }
             } catch (Exception ignored) {
             }
@@ -386,6 +387,22 @@ public class Main {
             return Character.toUpperCase(s.charAt(1)) + ":" + s.substring(2);
         }
         return s;
+    }
+
+    /** 读文本文件:自动识别 UTF-8/GBK,太长截断到前 3000 字 */
+    static String readTextFile(Path p) throws Exception {
+        byte[] bytes = Files.readAllBytes(p);
+        String content = new String(bytes, StandardCharsets.UTF_8);
+        // 含替换字符(U+FFFD)说明不是 UTF-8,改用 GBK
+        if (content.contains("\uFFFD")) {
+            content = new String(bytes, Charset.forName("GBK"));
+        }
+        content = content.trim();
+        if (content.length() > 3000) {
+            System.out.println("(文件太大,只取前 3000 字)");
+            content = content.substring(0, 3000);
+        }
+        return content;
     }
 
     static String readStory(String[] args) throws Exception {
