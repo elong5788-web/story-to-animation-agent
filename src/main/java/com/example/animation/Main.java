@@ -41,7 +41,8 @@ public class Main {
     record ShotDesign(String subject, String clothing, String setting, String style, String quality,
                       String camera, String narrative, String action) {
         String scene() {
-            return subject + "," + clothing + "," + setting + "," + style + "," + quality;
+            // 画风放最前面,让图像模型先知道怎么画
+            return style + "," + subject + "," + clothing + "," + setting + "," + quality;
         }
         String motion() {
             return action + "," + camera + "," + narrative;
@@ -91,7 +92,7 @@ public class Main {
             + "{\"subject\":\"主体\",\"clothing\":\"服装\",\"setting\":\"场景\",\"style\":\"风格\",\"quality\":\"画质\","
             + "\"camera\":\"镜头\",\"narrative\":\"叙事\",\"action\":\"动作\"}。"
             + "各字段写什么:subject=人物/主体外貌、表情、姿势;clothing=服装款式材质颜色配饰;"
-            + "setting=具体地点环境;style=艺术风格(水墨/电影感);quality=画质关键词(4K, cinematic, ultra-detailed);"
+            + "setting=具体地点环境;style=具体画风,必须简短几个词(如:中国水墨画/写实电影/二次元动漫/油画/赛博朋克);quality=画质关键词(4K, cinematic, ultra-detailed);"
             + "camera=景别/角度/运镜/焦点/构图;narrative=故事感/情绪张力;action=动作过程/节奏。"
             + "这 8 个维度必须逻辑自洽、互相呼应:叙事要贴合主体和场景氛围,动作要由叙事和场景自然推导,"
             + "前后不能矛盾或突兀。每个字段写一两句具体内容。只输出 JSON,不要任何解释。";
