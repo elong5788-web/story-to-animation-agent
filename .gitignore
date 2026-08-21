@@ -15,6 +15,7 @@ Thumbs.db
 
 # 生成的视频(二进制大文件,不提交)
 *.mp4
+output/
 
 # API 密钥配置(绝不提交)
 config.properties

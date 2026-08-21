@@ -3,19 +3,20 @@ package com.example.animation;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 
 /**
  * 主程序:输入一句话 → 选模式(短片/长片)→ DeepSeek 修饰 → 用户审查/修改 → Seedance 生成视频。
- *
- * 核心:agent 打包了"问 AI 怎么写提示词"+"把提示词喂给视频模型"的完整流程。
+ * 所有生成的视频统一放在 output/ 文件夹里,带时间戳不覆盖。
  */
 public class Main {
 
-    static final int DURATION = 5;
     static final String FFMPEG = "C:/Users/elong258/ffmpeg/bin/ffmpeg.exe";
+    static final String OUTPUT_DIR = "output";
 
     /** DeepSeek 角色:把一句话修饰成视频画面描述 */
     static final String EXPANDER_PROMPT = "你是一个 AI 视频创作助手。"
@@ -26,6 +27,8 @@ public class Main {
     public static void main(String[] args) throws Exception {
         String input = readStory(args);
         Scanner sc = new Scanner(System.in);
+        Files.createDirectories(Path.of(OUTPUT_DIR));   // 确保输出文件夹存在
+        String stamp = timestamp();                      // 本次运行的时间戳
 
         System.out.println("你的输入: " + input);
 
@@ -45,14 +48,14 @@ public class Main {
             List<Shot> shots = agent.plan(input);
             shots = reviewShotsLoop(sc, agent, input, shots);
             if (shots == null) return;
-            generateAndAssemble(shots);
+            generateAndAssemble(shots, stamp);
         } else {
             // ===== 短片模式 =====
             DeepSeekClient ds = new DeepSeekClient();
             String description = ds.chat(EXPANDER_PROMPT, input);
             description = reviewPromptLoop(sc, ds, input, description);
             if (description == null) return;
-            generateOneVideo(description);
+            generateOneVideo(description, stamp);
         }
     }
 
@@ -96,35 +99,36 @@ public class Main {
     }
 
     /** 短片:生成一个视频 */
-    static void generateOneVideo(String description) throws Exception {
-        System.out.println("\n开始生成视频(约 1~3 分钟)...");
+    static void generateOneVideo(String description, String stamp) throws Exception {
+        int duration = Config.getInt("DURATION", 5);
+        System.out.println("\n开始生成视频(" + duration + " 秒,约 1~3 分钟)...");
         VideoClient video = new VideoClient();
-        String taskId = video.submit(description, DURATION);
+        String taskId = video.submit(description, duration);
         String url = video.waitForVideo(taskId);
-        Path out = Path.of("output.mp4");
+        Path out = Path.of(OUTPUT_DIR, "video-" + stamp + ".mp4");
         video.download(url, out);
         System.out.println("视频已生成: " + out.toAbsolutePath());
     }
 
     /** 长片:逐镜头生成 + 拼接 */
-    static void generateAndAssemble(List<Shot> shots) throws Exception {
+    static void generateAndAssemble(List<Shot> shots, String stamp) throws Exception {
         VideoClient video = new VideoClient();
         List<Path> clips = new ArrayList<>();
         for (Shot s : shots) {
-            System.out.println("\n【生成镜头 " + s.shot() + "/" + shots.size() + "】"
-                    + s.shotType() + ",时长 " + s.duration() + " 秒");
             int duration = s.duration() >= 8 ? 10 : 5;
+            System.out.println("\n【生成镜头 " + s.shot() + "/" + shots.size() + "】"
+                    + s.shotType() + ",时长 " + duration + " 秒");
             String prompt = s.description() + "," + s.action();
             String taskId = video.submit(prompt, duration);
             String url = video.waitForVideo(taskId);
-            Path out = Path.of("shot-" + s.shot() + ".mp4");
+            Path out = Path.of(OUTPUT_DIR, "shot-" + s.shot() + "-" + stamp + ".mp4");
             video.download(url, out);
             clips.add(out);
             System.out.println("   镜头 " + s.shot() + " 完成 → " + out);
         }
         System.out.println("\n拼接成片...");
         VideoAssembler assembler = new VideoAssembler(FFMPEG);
-        Path finalVideo = Path.of("final.mp4");
+        Path finalVideo = Path.of(OUTPUT_DIR, "final-" + stamp + ".mp4");
         assembler.concat(clips, finalVideo);
         System.out.println("成片已生成: " + finalVideo.toAbsolutePath());
     }
@@ -135,6 +139,10 @@ public class Main {
             System.out.printf("镜头 %d(%s,时长 %d 秒)\n  画面: %s\n  动作: %s\n",
                     s.shot(), s.shotType(), s.duration(), s.description(), s.action());
         }
+    }
+
+    static String timestamp() {
+        return LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
     }
 
     static String readStory(String[] args) throws Exception {

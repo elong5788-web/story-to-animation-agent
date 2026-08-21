@@ -36,4 +36,17 @@ public class Config {
         }
         return System.getenv(key);
     }
+
+    /** 读取整数配置,读不到或格式错就返回默认值 */
+    public static int getInt(String key, int defaultValue) {
+        String v = get(key);
+        if (v == null || v.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(v.trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
 }

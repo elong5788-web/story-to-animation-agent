@@ -20,7 +20,6 @@ public class VideoClient {
     // ===== 可能需要调整的配置,集中放这里 =====
     static final String BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
     static final String MODEL = "doubao-seedance-2-0-fast-260128";   // ← 模型 ID(带版本号)
-    static final String RESOLUTION = "720p";                  // 分辨率
     // ================================================
 
     private final HttpClient http = HttpClient.newBuilder()
@@ -30,13 +29,17 @@ public class VideoClient {
 
     /** 提交一个文生视频任务,返回任务 id;durationSeconds 是该镜头时长 */
     public String submit(String prompt, int durationSeconds) throws Exception {
+        String resolution = Config.get("RESOLUTION");
+        if (resolution == null || resolution.isBlank()) {
+            resolution = "720p";
+        }
         String body = """
                 {
                   "model": "%s",
                   "content": [{"type": "text", "text": "%s"}],
                   "parameters": {"resolution": "%s", "duration": %d}
                 }
-                """.formatted(MODEL, escape(prompt), RESOLUTION, durationSeconds);
+                """.formatted(MODEL, escape(prompt), resolution, durationSeconds);
 
         HttpResponse<String> resp = send("POST", BASE_URL + "/contents/generations/tasks", body);
         JsonNode node = mapper.readTree(resp.body());
