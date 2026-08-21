@@ -48,7 +48,23 @@ public class Main {
         }
     }
 
+    /** 情节定位(agent 搜索知识所得) */
+    record Localization(String work, String scene, String characters, String plot, String iconicVisual, String style) {
+        String toText() {
+            return "作品:" + work + "\n桥段:" + scene + "\n角色:" + characters
+                    + "\n剧情:" + plot + "\n名场面:" + iconicVisual + "\n图像风格:" + style;
+        }
+    }
+
     private static final ObjectMapper mapper = new ObjectMapper();
+
+    /** 内容定位助手:搜索知识,定位具体桥段 + 推荐风格 */
+    static final String LOCALIZE_PROMPT = "你是一个内容定位助手。"
+            + "请搜索你的知识,把用户的一句话定位成一个具体的桥段/名场面,用 JSON 输出,格式严格为:"
+            + "{\"work\":\"作品名\",\"scene\":\"具体桥段名\",\"characters\":\"主要角色\","
+            + "\"plot\":\"剧情概要\",\"iconicVisual\":\"标志性画面\",\"style\":\"推荐图像风格\"}。"
+            + "style 必须从这些里选一个:写实电影感 / 动漫漫画风 / 水墨画风 / 赛博朋克 / 油画风 / 像素风。"
+            + "只输出 JSON,不要任何解释。";
 
     /** 世界观构建师:生成氛围 8 个子维度,每个都要写详实 */
     static final String WORLD_PROMPT = "你是一个奇幻世界观构建师。"
@@ -113,17 +129,65 @@ public class Main {
             // ===== 短片模式 =====
             DeepSeekClient ds = new DeepSeekClient();
 
-            // 前置:定世界观,必须让用户满意
-            WorldBuilding world = generateWorld(ds, input);
-            world = reviewWorldLoop(sc, ds, input, world);
+            // 前置1:情节定位(agent 搜索知识)
+            Localization loc = generateLocalization(ds, input);
+            loc = reviewLocalizationLoop(sc, ds, input, loc);
+            if (loc == null) return;
+            String context = input + "\n\n[定位信息]\n" + loc.toText();
+
+            // 前置2:定世界观,必须让用户满意
+            WorldBuilding world = generateWorld(ds, context);
+            world = reviewWorldLoop(sc, ds, context, world);
             if (world == null) return;
 
-            // 后续:基于世界观,拆 8 个画面/动作维度
-            ShotDesign design = generatePrompt(ds, input, world);
-            design = reviewPromptLoop(sc, ds, input, world, design);
+            // 后续:基于定位+世界观,拆 8 个画面/动作维度
+            ShotDesign design = generatePrompt(ds, context, world);
+            design = reviewPromptLoop(sc, ds, context, world, design);
             if (design == null) return;
 
             generateShortVideo(sc, design, world, stamp);
+        }
+    }
+
+    /** 情节定位:搜索知识,识别桥段/角色/风格 */
+    static Localization generateLocalization(DeepSeekClient ds, String input) throws Exception {
+        String reply = ds.chat(LOCALIZE_PROMPT, input);
+        String json = StoryboardParser.stripCodeFence(reply);
+        try {
+            JsonNode n = mapper.readTree(json);
+            return new Localization(
+                    n.path("work").asText(""), n.path("scene").asText(""),
+                    n.path("characters").asText(""), n.path("plot").asText(""),
+                    n.path("iconicVisual").asText(""), n.path("style").asText(""));
+        } catch (Exception e) {
+            return new Localization(json, "", "", "", "", "");
+        }
+    }
+
+    /** 定位审查:确认桥段/角色/风格 */
+    static Localization reviewLocalizationLoop(Scanner sc, DeepSeekClient ds, String input, Localization loc) throws Exception {
+        while (true) {
+            System.out.println("\n===== 情节定位(请审查)=====");
+            System.out.println("【作品】" + loc.work());
+            System.out.println("【桥段】" + loc.scene());
+            System.out.println("【角色】" + loc.characters());
+            System.out.println("【剧情】" + loc.plot());
+            System.out.println("【名场面】" + loc.iconicVisual());
+            System.out.println("【风格】" + loc.style());
+            System.out.println("  · y=满意 / n=取消 / r=换一个 / 其他=修改意见(尤其可改风格)");
+            System.out.print("> ");
+            String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
+            if (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes")) return loc;
+            if (answer.equalsIgnoreCase("n") || answer.equalsIgnoreCase("no") || answer.equals("取消")) {
+                System.out.println("已取消。");
+                return null;
+            }
+            if (answer.equalsIgnoreCase("r") || answer.equals("换一个")) {
+                loc = generateLocalization(ds, input + "\n(请定位一个不同的桥段)");
+                continue;
+            }
+            String feedback = (answer + "\n" + readRest(sc)).trim();
+            loc = generateLocalization(ds, input + "\n\n(上次定位:[" + loc.toText() + "],用户意见:\n" + feedback + "\n请重新定位。)");
         }
     }
 
