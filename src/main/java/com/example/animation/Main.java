@@ -6,7 +6,7 @@ import java.util.Scanner;
 
 /**
  * 主程序:纯流程编排,不掺和具体逻辑。
- * 输入 → 情节定位 → 世界观 → 8 维度 → 产出 → 可选生成视频。
+ * 输入 → 情节定位 → 世界观 → 分镜设计(6 段式) → 产出 → 可选生成预览视频。
  */
 public class Main {
 
@@ -32,14 +32,14 @@ public class Main {
         WorldBuilding world = WorldBuilder.run(sc, context);
         if (world == null) return;
 
-        // 4. 8 个画面/动作维度
-        ShotDesign design = ShotDesigner.run(sc, context, world);
+        // 4. 分镜设计(6 段式 VIDEOPROMPT:角色/场景/画风画质/时间轴/声音/限制)
+        ShotDesign design = ShotDesigner.run(sc, context, loc, world);
         if (design == null) return;
 
         // 5. 产出:分镜脚本 + 提示词
         ScriptWriter.write(loc, world, design, stamp);
 
-        // 6. 可选:生成视频
+        // 6. 可选:生成预览短片(默认 5 秒)
         System.out.print("\n要不要顺便生成视频/图片?(y=生成,回车跳过): ");
         String gen = sc.hasNextLine() ? sc.nextLine().trim() : "";
         if (gen.equalsIgnoreCase("y") || gen.equalsIgnoreCase("yes")) {

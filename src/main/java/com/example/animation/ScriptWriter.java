@@ -5,26 +5,31 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * 最终产出:完整分镜脚本 + 结构化提示词,打印并保存到文件。
+ * 最终产出:把定位 + 世界观 + 分镜设计,渲染成一份专业 VIDEOPROMPT,打印并保存到文件。
  */
 public class ScriptWriter {
 
     public static void write(Localization loc, WorldBuilding world, ShotDesign d, String stamp) throws Exception {
         String line = "-----------------------------------------------";
 
-        // 合成结构化完整提示词(可直接复制)
-        StringBuilder prompt = new StringBuilder();
-        prompt.append("【画风】").append(d.style()).append("\n");
-        prompt.append("【主体】").append(d.subject()).append("\n");
-        prompt.append("【服装】").append(d.clothing()).append("\n");
-        prompt.append("【场景】").append(d.setting()).append("\n");
-        prompt.append("【氛围】").append(world.toCoreText()).append("\n");
-        prompt.append("【运镜】").append(d.camera()).append("\n");
-        prompt.append("【情绪】").append(d.emotion()).append("\n");
-        prompt.append("【动作】").append(d.action()).append("\n");
-        prompt.append("【画质】").append(d.quality()).append("\n");
-        prompt.append("【负面约束】").append(d.negative());
-        String fullPrompt = prompt.toString();
+        // 渲染成专业 VIDEOPROMPT(对齐 AIGC 教程的 6 段式结构)
+        StringBuilder full = new StringBuilder();
+        full.append("【基础设定】\n");
+        full.append("角色:").append(d.character()).append("\n");
+        full.append("场景:").append(d.scene()).append("\n\n");
+        full.append("【氛围与画质】\n");
+        full.append("画风:").append(d.style()).append("\n");
+        full.append("画质:").append(d.quality()).append("\n");
+        full.append("氛围:").append(world.toText()).append("\n\n");
+        full.append("【画面内容】\n");
+        for (ShotDesign.Timeline t : d.timeline()) {
+            full.append(t.time()).append(" ").append(t.framing()).append(": ").append(t.action())
+                    .append("\n  [运镜]").append(t.camera())
+                    .append("\n  [情绪]").append(t.emotion()).append("\n");
+        }
+        full.append("\n【声音】").append(d.sound()).append("\n");
+        full.append("【限制】").append(d.negative());
+        String fullPrompt = full.toString();
 
         System.out.println("\n" + line);
         System.out.println("【最终分镜脚本】");

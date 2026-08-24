@@ -3,3 +3,14 @@
 
 DEEPSEEK_API_KEY=在这里填你的DeepSeek密钥
 ARK_API_KEY=在这里填你的火山引擎Ark密钥
+
+# 以下是可选参数(不填就用默认值):
+
+# 生成的预览视频时长(秒),默认 5。值越大越慢、越贵,且要模型支持。
+DURATION=5
+
+# 文生图分辨率,默认 2K。
+IMAGE_SIZE=2K
+
+# 视频分辨率,默认 720p。
+RESOLUTION=720p

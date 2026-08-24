@@ -8,14 +8,16 @@ import java.util.Scanner;
 
 /**
  * 视频生成:关键帧(用户提供 或 AI 文生图给你看)→ 图生视频。
+ * 这里只生成一段「预览短片」,时长由 config.properties 的 DURATION 决定(默认 5 秒)。
+ * 分镜设计里的时间轴(比如 0-12 秒)是一段更长的创意描述,和这个预览时长是两回事,别搞混。
  */
 public class VideoGenerator {
 
-    /** 短片:关键帧 → 图生视频 */
+    /** 生成一段预览短片:关键帧 → 图生视频。时长默认 5 秒,改 config.properties 的 DURATION 可调。 */
     public static void generateShortVideo(Scanner sc, ShotDesign d, String stamp) throws Exception {
         int duration = Config.getInt("DURATION", 5);
-        String scene = d.scene();
-        String motion = d.motion();
+        String scene = d.keyframePrompt();
+        String motion = d.motionPrompt();
 
         // 1. 关键帧:用户提供图,或 AI 文生图(生成后给你看,满意才继续)
         String keyframe = askForKeyframe(sc, scene);
