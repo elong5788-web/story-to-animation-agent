@@ -19,7 +19,6 @@ import java.util.Scanner;
  */
 public class Main {
 
-    static final String FFMPEG = "C:/Users/elong258/ffmpeg/bin/ffmpeg.exe";
     static final String OUTPUT_DIR = "output";
 
     /** 世界观(氛围)8 个子维度:强调(色调/光线/尺度/奇观)+ 弱化(基调/神秘感/气象/文化) */
@@ -101,59 +100,39 @@ public class Main {
         String input = resolveInput(typed, fromFile);
         System.out.println("你的输入: " + input);
 
-        // 2. 选模式
-        String mode;
-        while (true) {
-            System.out.print("\n选模式: 1=短片(一个视频)  2=长片(多镜头拼成片)  > ");
-            mode = sc.hasNextLine() ? sc.nextLine().trim() : "1";
-            if (mode.equals("1") || mode.equals("2")) break;
-            System.out.println("请输入 1 或 2");
-        }
+        DeepSeekClient ds = new DeepSeekClient();
 
-        if (mode.equals("2")) {
-            // ===== 长片模式 =====
-            System.out.println("\n(提醒:长片目前各镜头间可能不连贯,这是 AI 视频的一致性难题)");
-            StoryboardAgent agent = new StoryboardAgent();
-            List<Shot> shots = agent.plan(input);
-            shots = reviewShotsLoop(sc, agent, input, shots);
-            if (shots == null) return;
-            generateAndAssemble(shots, stamp);
-        } else {
-            // ===== 短片模式 =====
-            DeepSeekClient ds = new DeepSeekClient();
+        // 2. 情节定位(agent 搜索知识)
+        Localization loc = generateLocalization(ds, input);
+        loc = reviewLocalizationLoop(sc, ds, input, loc);
+        if (loc == null) return;
+        String context = input + "\n\n[定位信息]\n" + loc.toText();
 
-            // 前置1:情节定位(agent 搜索知识)
-            Localization loc = generateLocalization(ds, input);
-            loc = reviewLocalizationLoop(sc, ds, input, loc);
-            if (loc == null) return;
-            String context = input + "\n\n[定位信息]\n" + loc.toText();
+        // 3. 定世界观,必须让用户满意
+        WorldBuilding world = generateWorld(ds, context);
+        world = reviewWorldLoop(sc, ds, context, world);
+        if (world == null) return;
 
-            // 前置2:定世界观,必须让用户满意
-            WorldBuilding world = generateWorld(ds, context);
-            world = reviewWorldLoop(sc, ds, context, world);
-            if (world == null) return;
+        // 4. 基于定位+世界观,拆 8 个画面/动作维度
+        ShotDesign design = generatePrompt(ds, context, world);
+        design = reviewPromptLoop(sc, ds, context, world, design);
+        if (design == null) return;
 
-            // 后续:基于定位+世界观,拆 8 个画面/动作维度
-            ShotDesign design = generatePrompt(ds, context, world);
-            design = reviewPromptLoop(sc, ds, context, world, design);
-            if (design == null) return;
+        // 5. 最终产出:完整分镜脚本 + 超详细提示词(保存文件)
+        outputFinalScript(loc, world, design, stamp);
 
-            // 最终产出:完整分镜脚本 + 超详细提示词(保存文件)
-            outputFinalScript(loc, world, design, stamp);
-
-            // 可选:生成视频/图片
-            System.out.print("\n要不要顺便生成视频/图片?(y=生成,回车跳过): ");
-            String gen = sc.hasNextLine() ? sc.nextLine().trim() : "";
-            if (gen.equalsIgnoreCase("y") || gen.equalsIgnoreCase("yes")) {
-                generateShortVideo(sc, design, world, stamp);
-            }
+        // 6. 可选:生成视频/图片
+        System.out.print("\n要不要顺便生成视频/图片?(y=生成,回车跳过): ");
+        String gen = sc.hasNextLine() ? sc.nextLine().trim() : "";
+        if (gen.equalsIgnoreCase("y") || gen.equalsIgnoreCase("yes")) {
+            generateShortVideo(sc, design, world, stamp);
         }
     }
 
     /** 情节定位:搜索知识,识别桥段/角色/风格 */
     static Localization generateLocalization(DeepSeekClient ds, String input) throws Exception {
         String reply = ds.chat(LOCALIZE_PROMPT, input);
-        String json = StoryboardParser.stripCodeFence(reply);
+        String json = TextUtil.stripCodeFence(reply);
         try {
             JsonNode n = mapper.readTree(json);
             return new Localization(
@@ -195,7 +174,7 @@ public class Main {
     /** 生成世界观(氛围 8 子维度) */
     static WorldBuilding generateWorld(DeepSeekClient ds, String input) throws Exception {
         String reply = ds.chat(WORLD_PROMPT, input);
-        String json = StoryboardParser.stripCodeFence(reply);
+        String json = TextUtil.stripCodeFence(reply);
         try {
             JsonNode n = mapper.readTree(json);
             return new WorldBuilding(
@@ -243,7 +222,7 @@ public class Main {
     static ShotDesign generatePrompt(DeepSeekClient ds, String input, WorldBuilding world) throws Exception {
         String prompt = EXPANDER_PROMPT.formatted(world.toCoreText());
         String reply = ds.chat(prompt, input);
-        String json = StoryboardParser.stripCodeFence(reply);
+        String json = TextUtil.stripCodeFence(reply);
         try {
             JsonNode n = mapper.readTree(json);
             return new ShotDesign(
@@ -285,23 +264,6 @@ public class Main {
                     + "],场景[" + d.setting() + "],风格[" + d.style() + "],画质[" + d.quality()
                     + "],镜头[" + d.camera() + "],叙事[" + d.narrative() + "],动作[" + d.action()
                     + "],用户意见:\n" + feedback + "\n请重新生成。)", world);
-        }
-    }
-
-    /** 长片:审查分镜 */
-    static List<Shot> reviewShotsLoop(Scanner sc, StoryboardAgent agent, String input, List<Shot> shots) throws Exception {
-        while (true) {
-            printShots(shots);
-            System.out.println("  · y=满意 / n=取消 / 其他=修改意见重新拆镜");
-            System.out.print("> ");
-            String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
-            if (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes")) return shots;
-            if (answer.equalsIgnoreCase("n") || answer.equalsIgnoreCase("no") || answer.equals("取消")) {
-                System.out.println("已取消。");
-                return null;
-            }
-            System.out.println("带着意见重新拆镜...");
-            shots = agent.plan(input, answer);
         }
     }
 
@@ -378,62 +340,6 @@ public class Main {
         System.out.println("视频已生成: " + out.toAbsolutePath());
     }
 
-    /** 可选图片:粘贴路径/网址,回车返回 null(跳过) */
-    static String askOptionalImage(Scanner sc, String label) throws Exception {
-        System.out.println("\n" + label);
-        System.out.print("  (粘贴路径/网址,回车跳过) > ");
-        String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
-        if (answer.isBlank()) return null;
-        if (answer.startsWith("http://") || answer.startsWith("https://")) return answer;
-        Path p = Path.of(normalizePath(answer));
-        if (Files.exists(p) && Files.isRegularFile(p)) return ImageClient.toDataUrl(p);
-        System.out.println("  没找到路径,按跳过处理");
-        return null;
-    }
-
-    /** 尾帧:用户提供,或 AI 基于首帧图生图(保持同一角色场景),可反复改 */
-    static String askForLastFrame(Scanner sc, String firstFrameDataUrl, String motion) throws Exception {
-        ImageClient image = new ImageClient();
-        while (true) {
-            System.out.println("\n尾帧(终点画面):");
-            System.out.println("  · 粘贴尾帧图片路径/网址");
-            System.out.println("  · 直接回车 → AI 基于首帧生成连贯尾帧");
-            System.out.print("> ");
-            String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
-
-            if (answer.isBlank()) {
-                // AI 生成尾帧:图生图(以首帧为参考)
-                String prompt = "保持同一角色、服装和场景不变,只改变动作和姿势:" + motion;
-                String url = image.imageToImage(prompt, firstFrameDataUrl);
-                Path tail = Path.of(OUTPUT_DIR, "tail-" + timestamp() + ".jpg");
-                image.download(url, tail);
-                System.out.println("  尾帧已生成: " + tail + " (可打开查看)");
-                System.out.print("  满意吗?(y 满意 / n 取消 / 其他=你的修改意见,让 AI 改): ");
-                String a2 = sc.hasNextLine() ? sc.nextLine().trim() : "";
-                if (a2.equalsIgnoreCase("y") || a2.equalsIgnoreCase("yes")) {
-                    return ImageClient.toDataUrl(tail);
-                }
-                if (a2.equalsIgnoreCase("n") || a2.equalsIgnoreCase("no") || a2.equals("取消")) {
-                    return null;
-                }
-                // 其他 = 修改意见,带着意见重新生成尾帧
-                String feedback = (a2 + "\n" + readRest(sc)).trim();
-                motion = feedback;
-                System.out.println("  带着你的意见重新生成尾帧...");
-                continue;
-            }
-            // 用户提供尾帧图
-            if (answer.startsWith("http://") || answer.startsWith("https://")) {
-                return answer;
-            }
-            Path p = Path.of(normalizePath(answer));
-            if (Files.exists(p) && Files.isRegularFile(p)) {
-                return ImageClient.toDataUrl(p);
-            }
-            System.out.println("  没找到路径,再试\n");
-        }
-    }
-
     /** 关键帧来源:粘贴路径/网址,或序号选 materials/,或回车 AI 生成 */
     static String askForKeyframe(Scanner sc, String scene) throws Exception {
         List<Path> materialsImages = listMaterialsImages();
@@ -506,37 +412,6 @@ public class Main {
             if (answer.equalsIgnoreCase("n") || answer.equalsIgnoreCase("no") || answer.equals("取消")) {
                 return null;
             }
-        }
-    }
-
-    /** 长片:逐镜头生成 + 拼接 */
-    static void generateAndAssemble(List<Shot> shots, String stamp) throws Exception {
-        VideoClient video = new VideoClient();
-        List<Path> clips = new ArrayList<>();
-        for (Shot s : shots) {
-            int duration = s.duration() >= 8 ? 10 : 5;
-            System.out.println("\n【生成镜头 " + s.shot() + "/" + shots.size() + "】"
-                    + s.shotType() + ",时长 " + duration + " 秒");
-            String prompt = s.description() + "," + s.action();
-            String taskId = video.submit(prompt, duration);
-            String url = video.waitForVideo(taskId);
-            Path out = Path.of(OUTPUT_DIR, "shot-" + s.shot() + "-" + stamp + ".mp4");
-            video.download(url, out);
-            clips.add(out);
-            System.out.println("   镜头 " + s.shot() + " 完成 → " + out);
-        }
-        System.out.println("\n拼接成片...");
-        VideoAssembler assembler = new VideoAssembler(FFMPEG);
-        Path finalVideo = Path.of(OUTPUT_DIR, "final-" + stamp + ".mp4");
-        assembler.concat(clips, finalVideo);
-        System.out.println("成片已生成: " + finalVideo.toAbsolutePath());
-    }
-
-    static void printShots(List<Shot> shots) {
-        System.out.println("\n=== 当前分镜 ===");
-        for (Shot s : shots) {
-            System.out.printf("镜头 %d(%s,时长 %d 秒)\n  画面: %s\n  动作: %s\n",
-                    s.shot(), s.shotType(), s.duration(), s.description(), s.action());
         }
     }
 
