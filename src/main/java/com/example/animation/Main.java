@@ -1,456 +1,49 @@
 package com.example.animation;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Scanner;
 
 /**
- * 主程序:
- * 输入一句话 → 【前置】定世界观(氛围,用户必须满意)→ 拆画面/动作 → 文生图 → 图生视频。
+ * 主程序:纯流程编排,不掺和具体逻辑。
+ * 输入 → 情节定位 → 世界观 → 8 维度 → 产出 → 可选生成视频。
  */
 public class Main {
 
-    static final String OUTPUT_DIR = "output";
-
-    /** 世界观(氛围)8 个子维度:强调(色调/光线/尺度/奇观)+ 弱化(基调/神秘感/气象/文化) */
-    record WorldBuilding(String tone, String scale, String mystery, String wonder,
-                         String palette, String lighting, String weather, String culture) {
-        /** 强调维度:给画面/8维度生成用,只含色调光线尺度奇观 */
-        String toCoreText() {
-            return "色调:" + palette + ",光线:" + lighting + ",尺度:" + scale + ",奇观:" + wonder;
-        }
-        /** 全部维度:给用户看 */
-        String toText() {
-            return "色调:" + palette + ",光线:" + lighting + ",尺度:" + scale + ",奇观:" + wonder
-                    + ",基调:" + tone + ",神秘感:" + mystery + ",气象:" + weather + ",文化:" + culture;
-        }
-    }
-
-    /** 画面/动作的 8 个细分维度 */
-    record ShotDesign(String subject, String clothing, String setting, String style, String quality,
-                      String camera, String narrative, String action) {
-        String scene() {
-            // 画风放最前面,让图像模型先知道怎么画
-            return style + "," + subject + "," + clothing + "," + setting + "," + quality;
-        }
-        String motion() {
-            return action + "," + camera + "," + narrative;
-        }
-    }
-
-    /** 情节定位(agent 搜索知识所得) */
-    record Localization(String work, String scene, String characters, String plot, String iconicVisual, String style) {
-        String toText() {
-            return "作品:" + work + "\n桥段:" + scene + "\n角色:" + characters
-                    + "\n剧情:" + plot + "\n名场面:" + iconicVisual + "\n图像风格:" + style;
-        }
-    }
-
-    private static final ObjectMapper mapper = new ObjectMapper();
-
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
-        Files.createDirectories(Path.of(OUTPUT_DIR));
-        String stamp = timestamp();
+        Files.createDirectories(Path.of("output"));
+        String stamp = InputHandler.timestamp();
 
         // 1. 输入
-        String fromFile = readStory(args);
+        String fromFile = InputHandler.readStory(args);
         System.out.println("当前 story.txt: " + fromFile);
         System.out.println("输入画面(回车用上面的;可粘贴多行文字,或输入 .txt 文件路径;空行结束): ");
-        String typed = readRest(sc);
-        String input = resolveInput(typed, fromFile);
+        String typed = InputHandler.readRest(sc);
+        String input = InputHandler.resolveInput(typed, fromFile);
         System.out.println("你的输入: " + input);
 
-        DeepSeekClient ds = new DeepSeekClient();
-
-        // 2. 情节定位(agent 搜索知识)
-        Localization loc = generateLocalization(ds, input);
-        loc = reviewLocalizationLoop(sc, ds, input, loc);
+        // 2. 情节定位
+        Localization loc = Localizer.run(sc, input);
         if (loc == null) return;
         String context = input + "\n\n[定位信息]\n" + loc.toText();
 
-        // 3. 定世界观,必须让用户满意
-        WorldBuilding world = generateWorld(ds, context);
-        world = reviewWorldLoop(sc, ds, context, world);
+        // 3. 世界观
+        WorldBuilding world = WorldBuilder.run(sc, context);
         if (world == null) return;
 
-        // 4. 基于定位+世界观,拆 8 个画面/动作维度
-        ShotDesign design = generatePrompt(ds, context, world);
-        design = reviewPromptLoop(sc, ds, context, world, design);
+        // 4. 8 个画面/动作维度
+        ShotDesign design = ShotDesigner.run(sc, context, world);
         if (design == null) return;
 
-        // 5. 最终产出:完整分镜脚本 + 超详细提示词(保存文件)
-        outputFinalScript(loc, world, design, stamp);
+        // 5. 产出:分镜脚本 + 提示词
+        ScriptWriter.write(loc, world, design, stamp);
 
-        // 6. 可选:生成视频/图片
+        // 6. 可选:生成视频
         System.out.print("\n要不要顺便生成视频/图片?(y=生成,回车跳过): ");
         String gen = sc.hasNextLine() ? sc.nextLine().trim() : "";
         if (gen.equalsIgnoreCase("y") || gen.equalsIgnoreCase("yes")) {
-            generateShortVideo(sc, design, world, stamp);
+            VideoGenerator.generateShortVideo(sc, design, stamp);
         }
-    }
-
-    /** 情节定位:搜索知识,识别桥段/角色/风格 */
-    static Localization generateLocalization(DeepSeekClient ds, String input) throws Exception {
-        String reply = ds.chat(Prompts.localize(), input);
-        String json = TextUtil.stripCodeFence(reply);
-        try {
-            JsonNode n = mapper.readTree(json);
-            return new Localization(
-                    n.path("work").asText(""), n.path("scene").asText(""),
-                    n.path("characters").asText(""), n.path("plot").asText(""),
-                    n.path("iconicVisual").asText(""), n.path("style").asText(""));
-        } catch (Exception e) {
-            return new Localization(json, "", "", "", "", "");
-        }
-    }
-
-    /** 定位审查:确认桥段/角色/风格 */
-    static Localization reviewLocalizationLoop(Scanner sc, DeepSeekClient ds, String input, Localization loc) throws Exception {
-        while (true) {
-            System.out.println("\n===== 情节定位(请审查)=====");
-            System.out.println("【作品】" + loc.work());
-            System.out.println("【桥段】" + loc.scene());
-            System.out.println("【角色】" + loc.characters());
-            System.out.println("【剧情】" + loc.plot());
-            System.out.println("【名场面】" + loc.iconicVisual());
-            System.out.println("【风格】" + loc.style());
-            System.out.println("  · y=满意 / n=取消 / r=换一个 / 其他=修改意见(尤其可改风格)");
-            System.out.print("> ");
-            String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
-            if (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes")) return loc;
-            if (answer.equalsIgnoreCase("n") || answer.equalsIgnoreCase("no") || answer.equals("取消")) {
-                System.out.println("已取消。");
-                return null;
-            }
-            if (answer.equalsIgnoreCase("r") || answer.equals("换一个")) {
-                loc = generateLocalization(ds, input + "\n(请定位一个不同的桥段)");
-                continue;
-            }
-            String feedback = (answer + "\n" + readRest(sc)).trim();
-            loc = generateLocalization(ds, input + "\n\n(上次定位:[" + loc.toText() + "],用户意见:\n" + feedback + "\n请重新定位。)");
-        }
-    }
-
-    /** 生成世界观(氛围 8 子维度) */
-    static WorldBuilding generateWorld(DeepSeekClient ds, String input) throws Exception {
-        String reply = ds.chat(Prompts.world(), input);
-        String json = TextUtil.stripCodeFence(reply);
-        try {
-            JsonNode n = mapper.readTree(json);
-            return new WorldBuilding(
-                    n.path("tone").asText(""), n.path("scale").asText(""),
-                    n.path("mystery").asText(""), n.path("wonder").asText(""),
-                    n.path("palette").asText(""), n.path("lighting").asText(""),
-                    n.path("weather").asText(""), n.path("culture").asText(""));
-        } catch (Exception e) {
-            return new WorldBuilding(json, "", "", "", "", "", "", "");
-        }
-    }
-
-    /** 世界观审查:用户必须满意,可加文字填补优化 */
-    static WorldBuilding reviewWorldLoop(Scanner sc, DeepSeekClient ds, String input, WorldBuilding world) throws Exception {
-        while (true) {
-            System.out.println("\n===== 氛围设定(重点维度,请审查)=====");
-            System.out.println("【色调】" + world.palette());
-            System.out.println("【光线】" + world.lighting());
-            System.out.println("【尺度】" + world.scale());
-            System.out.println("【奇观】" + world.wonder());
-            System.out.println("(次要氛围已自动生成:基调[" + world.tone() + "] 神秘感[" + world.mystery()
-                    + "] 气象[" + world.weather() + "] 文化[" + world.culture() + "])");
-            System.out.println("  · y = 满意,锁定这个世界");
-            System.out.println("  · r = 换一个完全不同的世界");
-            System.out.println("  · 其他 = 你补充的文字,用来优化这个世界");
-            System.out.println("  · n = 取消");
-            System.out.print("> ");
-            String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
-            if (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes")) return world;
-            if (answer.equalsIgnoreCase("n") || answer.equalsIgnoreCase("no") || answer.equals("取消")) {
-                System.out.println("已取消。");
-                return null;
-            }
-            if (answer.equalsIgnoreCase("r") || answer.equals("换一个")) {
-                world = generateWorld(ds, input + "\n(请给一个完全不同的世界)");
-                continue;
-            }
-            // 其他 = 用户补充文字(可多行,空行结束)
-            String feedback = (answer + "\n" + readRest(sc)).trim();
-            world = generateWorld(ds, input + "\n\n(用户补充的世界观设定:\n" + feedback + ")");
-        }
-    }
-
-    /** 基于世界观,拆 8 个画面/动作维度 */
-    static ShotDesign generatePrompt(DeepSeekClient ds, String input, WorldBuilding world) throws Exception {
-        String prompt = Prompts.expand().formatted(world.toCoreText());
-        String reply = ds.chat(prompt, input);
-        String json = TextUtil.stripCodeFence(reply);
-        try {
-            JsonNode n = mapper.readTree(json);
-            return new ShotDesign(
-                    n.path("subject").asText(""), n.path("clothing").asText(""),
-                    n.path("setting").asText(""), n.path("style").asText(""),
-                    n.path("quality").asText(""), n.path("camera").asText(""),
-                    n.path("narrative").asText(""), n.path("action").asText(""));
-        } catch (Exception e) {
-            return new ShotDesign(json, "", "", "", "", "", "", "");
-        }
-    }
-
-    /** 短片:审查 8 个画面/动作维度 */
-    static ShotDesign reviewPromptLoop(Scanner sc, DeepSeekClient ds, String input, WorldBuilding world, ShotDesign d) throws Exception {
-        while (true) {
-            System.out.println("\n===== 画面与动作维度(请审查)=====");
-            System.out.println("【主体】" + d.subject());
-            System.out.println("【服装】" + d.clothing());
-            System.out.println("【场景】" + d.setting());
-            System.out.println("【风格】" + d.style());
-            System.out.println("【画质】" + d.quality());
-            System.out.println("【镜头】" + d.camera());
-            System.out.println("【叙事】" + d.narrative());
-            System.out.println("【动作】" + d.action());
-            System.out.println("  · y=满意 / n=取消 / r=换一个 / 其他=修改意见");
-            System.out.print("> ");
-            String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
-            if (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes")) return d;
-            if (answer.equalsIgnoreCase("n") || answer.equalsIgnoreCase("no") || answer.equals("取消")) {
-                System.out.println("已取消。");
-                return null;
-            }
-            if (answer.equalsIgnoreCase("r") || answer.equals("换一个")) {
-                d = generatePrompt(ds, input + "\n(请给和上次不同的版本)", world);
-                continue;
-            }
-            String feedback = (answer + "\n" + readRest(sc)).trim();
-            d = generatePrompt(ds, input + "\n\n(上次维度:主体[" + d.subject() + "],服装[" + d.clothing()
-                    + "],场景[" + d.setting() + "],风格[" + d.style() + "],画质[" + d.quality()
-                    + "],镜头[" + d.camera() + "],叙事[" + d.narrative() + "],动作[" + d.action()
-                    + "],用户意见:\n" + feedback + "\n请重新生成。)", world);
-        }
-    }
-
-    /** 最终产出:完整分镜脚本 + 超详细提示词,并保存到文件 */
-    static void outputFinalScript(Localization loc, WorldBuilding world, ShotDesign d, String stamp) throws Exception {
-        String line = "-----------------------------------------------";
-        String fullPrompt = d.style() + "," + d.subject() + "," + d.clothing() + "," + d.setting()
-                + "," + world.toCoreText() + "," + d.camera() + "," + d.action() + "," + d.quality();
-
-        System.out.println("\n" + line);
-        System.out.println("【最终分镜脚本】");
-        System.out.println(line);
-        System.out.println("作品:" + loc.work() + " · " + loc.scene());
-        System.out.println("角色:" + loc.characters());
-        System.out.println("剧情:" + loc.plot());
-        System.out.println("名场面:" + loc.iconicVisual());
-        System.out.println("风格:" + loc.style());
-        System.out.println("\n[世界观氛围]");
-        System.out.println(world.toText());
-        System.out.println("\n[镜头设计]");
-        System.out.println("主体:" + d.subject());
-        System.out.println("服装:" + d.clothing());
-        System.out.println("场景:" + d.setting());
-        System.out.println("风格:" + d.style());
-        System.out.println("画质:" + d.quality());
-        System.out.println("镜头:" + d.camera());
-        System.out.println("叙事:" + d.narrative());
-        System.out.println("动作:" + d.action());
-        System.out.println("\n" + line);
-        System.out.println("【完整提示词(可直接复制到 cineART/即梦/可灵等使用)】");
-        System.out.println(line);
-        System.out.println(fullPrompt);
-        System.out.println(line);
-
-        // 保存到文件
-        Path out = Path.of(OUTPUT_DIR, "prompt-" + stamp + ".txt");
-        StringBuilder sb = new StringBuilder();
-        sb.append("作品:").append(loc.work()).append(" · ").append(loc.scene()).append("\n");
-        sb.append("角色:").append(loc.characters()).append("\n");
-        sb.append("剧情:").append(loc.plot()).append("\n");
-        sb.append("名场面:").append(loc.iconicVisual()).append("\n\n");
-        sb.append("[世界观氛围]\n").append(world.toText()).append("\n\n");
-        sb.append("[镜头设计]\n");
-        sb.append("主体:").append(d.subject()).append("\n");
-        sb.append("服装:").append(d.clothing()).append("\n");
-        sb.append("场景:").append(d.setting()).append("\n");
-        sb.append("风格:").append(d.style()).append("\n");
-        sb.append("画质:").append(d.quality()).append("\n");
-        sb.append("镜头:").append(d.camera()).append("\n");
-        sb.append("叙事:").append(d.narrative()).append("\n");
-        sb.append("动作:").append(d.action()).append("\n\n");
-        sb.append("[完整提示词]\n").append(fullPrompt).append("\n");
-        Files.writeString(out, sb.toString(), StandardCharsets.UTF_8);
-        System.out.println("\n已保存到: " + out.toAbsolutePath());
-    }
-
-    /** 短片:关键帧(用户提供 或 AI 文生图给你看)→ 图生视频 */
-    static void generateShortVideo(Scanner sc, ShotDesign d, WorldBuilding world, String stamp) throws Exception {
-        int duration = Config.getInt("DURATION", 5);
-        String scene = d.scene();
-        String motion = d.motion();
-
-        // 1. 关键帧:用户提供图,或 AI 文生图(生成后给你看,满意才继续)
-        String keyframe = askForKeyframe(sc, scene);
-        if (keyframe == null) return;
-
-        // 2. 图生视频
-        System.out.println("\n生成视频(图生视频,约 1~3 分钟)...");
-        VideoClient video = new VideoClient();
-        String taskId = video.submitImageToVideo(keyframe, motion, duration);
-        String url = video.waitForVideo(taskId);
-        Path out = Path.of(OUTPUT_DIR, "video-" + stamp + ".mp4");
-        video.download(url, out);
-        System.out.println("视频已生成: " + out.toAbsolutePath());
-    }
-
-    /** 关键帧来源:粘贴路径/网址,或序号选 materials/,或回车 AI 生成 */
-    static String askForKeyframe(Scanner sc, String scene) throws Exception {
-        List<Path> materialsImages = listMaterialsImages();
-        while (true) {
-            if (!materialsImages.isEmpty()) {
-                System.out.println("\nmaterials/ 里有图:");
-                for (int i = 0; i < materialsImages.size(); i++) {
-                    System.out.println("  " + (i + 1) + ". " + materialsImages.get(i).getFileName());
-                }
-            }
-            System.out.println("关键帧来源:");
-            System.out.println("  · 粘贴图片文件路径 或 网址(https://... 结尾是 .jpg/.png 的图片)");
-            if (!materialsImages.isEmpty()) System.out.println("  · 输入序号,选 materials/ 里的图");
-            System.out.println("  · 直接回车 → 让 AI 文生图");
-            System.out.print("> ");
-            String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
-
-            if (answer.isBlank()) {
-                return aiKeyframeWithReview(sc, scene);
-            }
-            if (answer.startsWith("http://") || answer.startsWith("https://")) {
-                return answer;
-            }
-            if (!materialsImages.isEmpty()) {
-                try {
-                    int idx = Integer.parseInt(answer) - 1;
-                    if (idx >= 0 && idx < materialsImages.size()) {
-                        return ImageClient.toDataUrl(materialsImages.get(idx));
-                    }
-                } catch (NumberFormatException ignored) {
-                }
-            }
-            Path p = Path.of(normalizePath(answer));
-            if (Files.exists(p) && Files.isRegularFile(p)) {
-                return ImageClient.toDataUrl(p);
-            }
-            System.out.println("  没找到这个路径或网址,再试一次\n");
-        }
-    }
-
-    static List<Path> listMaterialsImages() throws Exception {
-        Path dir = Path.of("materials");
-        List<Path> images = new ArrayList<>();
-        if (Files.exists(dir)) {
-            try (var stream = Files.list(dir)) {
-                stream.filter(p -> {
-                    String n = p.getFileName().toString().toLowerCase();
-                    return n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".webp");
-                }).forEach(images::add);
-            }
-        }
-        return images;
-    }
-
-    /** AI 文生图 + 用户确认,返回 dataURL(取消返回 null) */
-    static String aiKeyframeWithReview(Scanner sc, String scene) throws Exception {
-        ImageClient image = new ImageClient();
-        while (true) {
-            System.out.println("\n① 文生图:生成关键帧(约 10~30 秒)...");
-            String url = image.textToImage(scene);
-            Path keyframe = Path.of(OUTPUT_DIR, "keyframe-" + timestamp() + ".jpg");
-            image.download(url, keyframe);
-            System.out.println("   关键帧已生成: " + keyframe);
-            System.out.println("   (可打开这个文件查看)");
-            System.out.print("   满意吗?(y 满意 / r 重新生成 / n 取消): ");
-            String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
-            if (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes")) {
-                return ImageClient.toDataUrl(keyframe);
-            }
-            if (answer.equalsIgnoreCase("n") || answer.equalsIgnoreCase("no") || answer.equals("取消")) {
-                return null;
-            }
-        }
-    }
-
-    static String timestamp() {
-        return LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
-    }
-
-    /** 读多行文字,直到空行(用于粘贴长文字/小说片段) */
-    static String readRest(Scanner sc) {
-        StringBuilder sb = new StringBuilder();
-        while (sc.hasNextLine()) {
-            String line = sc.nextLine();
-            if (line.isBlank()) break;
-            sb.append(line).append("\n");
-        }
-        return sb.toString().trim();
-    }
-
-    /** 解析输入:空则用默认;是文件路径则读文件;否则当粘贴文字 */
-    static String resolveInput(String typed, String fromFile) throws Exception {
-        if (typed.isBlank()) return fromFile;
-        // 单行且是存在的文件 → 读文件内容
-        if (!typed.contains("\n")) {
-            try {
-                Path p = Path.of(normalizePath(typed));
-                if (Files.exists(p) && Files.isRegularFile(p)) {
-                    System.out.println("(已读取文件: " + p + ")");
-                    return readTextFile(p);
-                }
-            } catch (Exception ignored) {
-            }
-        }
-        // 否则当作粘贴文字,存进 story.txt
-        Files.writeString(Path.of("story.txt"), typed, StandardCharsets.UTF_8);
-        return typed;
-    }
-
-    /** 把 Git Bash 风格路径 /c/Users/... 转成 Windows 的 C:/Users/... */
-    static String normalizePath(String s) {
-        if (s.length() >= 3 && s.charAt(0) == '/' && s.charAt(2) == '/') {
-            return Character.toUpperCase(s.charAt(1)) + ":" + s.substring(2);
-        }
-        return s;
-    }
-
-    /** 读文本文件:自动识别 UTF-8/GBK,太长截断到前 3000 字 */
-    static String readTextFile(Path p) throws Exception {
-        byte[] bytes = Files.readAllBytes(p);
-        String content = new String(bytes, StandardCharsets.UTF_8);
-        // 含替换字符(U+FFFD)说明不是 UTF-8,改用 GBK
-        if (content.contains("\uFFFD")) {
-            content = new String(bytes, Charset.forName("GBK"));
-        }
-        content = content.trim();
-        if (content.length() > 3000) {
-            System.out.println("(文件太大,只取前 3000 字)");
-            content = content.substring(0, 3000);
-        }
-        return content;
-    }
-
-    static String readStory(String[] args) throws Exception {
-        Path storyFile = Path.of("story.txt");
-        if (Files.exists(storyFile)) {
-            return Files.readString(storyFile, StandardCharsets.UTF_8).trim();
-        }
-        if (args.length > 0) {
-            return String.join(" ", args);
-        }
-        return "一个女孩在雨天撑伞走过街道";
     }
 }

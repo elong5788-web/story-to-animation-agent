@@ -1,0 +1,108 @@
+package com.example.animation;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Scanner;
+
+/**
+ * 视频生成:关键帧(用户提供 或 AI 文生图给你看)→ 图生视频。
+ */
+public class VideoGenerator {
+
+    /** 短片:关键帧 → 图生视频 */
+    public static void generateShortVideo(Scanner sc, ShotDesign d, String stamp) throws Exception {
+        int duration = Config.getInt("DURATION", 5);
+        String scene = d.scene();
+        String motion = d.motion();
+
+        // 1. 关键帧:用户提供图,或 AI 文生图(生成后给你看,满意才继续)
+        String keyframe = askForKeyframe(sc, scene);
+        if (keyframe == null) return;
+
+        // 2. 图生视频
+        System.out.println("\n生成视频(图生视频,约 1~3 分钟)...");
+        VideoClient video = new VideoClient();
+        String taskId = video.submitImageToVideo(keyframe, motion, duration);
+        String url = video.waitForVideo(taskId);
+        Path out = Path.of("output", "video-" + stamp + ".mp4");
+        video.download(url, out);
+        System.out.println("视频已生成: " + out.toAbsolutePath());
+    }
+
+    /** 关键帧来源:粘贴路径/网址,或序号选 materials/,或回车 AI 生成 */
+    static String askForKeyframe(Scanner sc, String scene) throws Exception {
+        List<Path> materialsImages = listMaterialsImages();
+        while (true) {
+            if (!materialsImages.isEmpty()) {
+                System.out.println("\nmaterials/ 里有图:");
+                for (int i = 0; i < materialsImages.size(); i++) {
+                    System.out.println("  " + (i + 1) + ". " + materialsImages.get(i).getFileName());
+                }
+            }
+            System.out.println("关键帧来源:");
+            System.out.println("  · 粘贴图片文件路径 或 网址(https://... 结尾是 .jpg/.png 的图片)");
+            if (!materialsImages.isEmpty()) System.out.println("  · 输入序号,选 materials/ 里的图");
+            System.out.println("  · 直接回车 → 让 AI 文生图");
+            System.out.print("> ");
+            String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
+
+            if (answer.isBlank()) {
+                return aiKeyframeWithReview(sc, scene);
+            }
+            if (answer.startsWith("http://") || answer.startsWith("https://")) {
+                return answer;
+            }
+            if (!materialsImages.isEmpty()) {
+                try {
+                    int idx = Integer.parseInt(answer) - 1;
+                    if (idx >= 0 && idx < materialsImages.size()) {
+                        return ImageClient.toDataUrl(materialsImages.get(idx));
+                    }
+                } catch (NumberFormatException ignored) {
+                }
+            }
+            Path p = Path.of(InputHandler.normalizePath(answer));
+            if (Files.exists(p) && Files.isRegularFile(p)) {
+                return ImageClient.toDataUrl(p);
+            }
+            System.out.println("  没找到这个路径或网址,再试一次\n");
+        }
+    }
+
+    /** AI 文生图 + 用户确认,返回 dataURL(取消返回 null) */
+    static String aiKeyframeWithReview(Scanner sc, String scene) throws Exception {
+        ImageClient image = new ImageClient();
+        while (true) {
+            System.out.println("\n① 文生图:生成关键帧(约 10~30 秒)...");
+            String url = image.textToImage(scene);
+            Path keyframe = Path.of("output", "keyframe-" + InputHandler.timestamp() + ".jpg");
+            image.download(url, keyframe);
+            System.out.println("   关键帧已生成: " + keyframe);
+            System.out.println("   (可打开这个文件查看)");
+            System.out.print("   满意吗?(y 满意 / r 重新生成 / n 取消): ");
+            String answer = sc.hasNextLine() ? sc.nextLine().trim() : "";
+            if (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes")) {
+                return ImageClient.toDataUrl(keyframe);
+            }
+            if (answer.equalsIgnoreCase("n") || answer.equalsIgnoreCase("no") || answer.equals("取消")) {
+                return null;
+            }
+        }
+    }
+
+    static List<Path> listMaterialsImages() throws Exception {
+        Path dir = Path.of("materials");
+        List<Path> images = new ArrayList<>();
+        if (Files.exists(dir)) {
+            try (var stream = Files.list(dir)) {
+                stream.filter(p -> {
+                    String n = p.getFileName().toString().toLowerCase();
+                    return n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".webp");
+                }).forEach(images::add);
+            }
+        }
+        return images;
+    }
+}
