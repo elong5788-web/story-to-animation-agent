@@ -5,14 +5,26 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * 最终产出:完整分镜脚本 + 超详细提示词,打印并保存到文件。
+ * 最终产出:完整分镜脚本 + 结构化提示词,打印并保存到文件。
  */
 public class ScriptWriter {
 
     public static void write(Localization loc, WorldBuilding world, ShotDesign d, String stamp) throws Exception {
         String line = "-----------------------------------------------";
-        String fullPrompt = d.style() + "," + d.subject() + "," + d.clothing() + "," + d.setting()
-                + "," + world.toCoreText() + "," + d.camera() + "," + d.action() + "," + d.quality();
+
+        // 合成结构化完整提示词(可直接复制)
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("【画风】").append(d.style()).append("\n");
+        prompt.append("【主体】").append(d.subject()).append("\n");
+        prompt.append("【服装】").append(d.clothing()).append("\n");
+        prompt.append("【场景】").append(d.setting()).append("\n");
+        prompt.append("【氛围】").append(world.toCoreText()).append("\n");
+        prompt.append("【运镜】").append(d.camera()).append("\n");
+        prompt.append("【情绪】").append(d.emotion()).append("\n");
+        prompt.append("【动作】").append(d.action()).append("\n");
+        prompt.append("【画质】").append(d.quality()).append("\n");
+        prompt.append("【负面约束】").append(d.negative());
+        String fullPrompt = prompt.toString();
 
         System.out.println("\n" + line);
         System.out.println("【最终分镜脚本】");
@@ -24,15 +36,6 @@ public class ScriptWriter {
         System.out.println("风格:" + loc.style());
         System.out.println("\n[世界观氛围]");
         System.out.println(world.toText());
-        System.out.println("\n[镜头设计]");
-        System.out.println("主体:" + d.subject());
-        System.out.println("服装:" + d.clothing());
-        System.out.println("场景:" + d.setting());
-        System.out.println("风格:" + d.style());
-        System.out.println("画质:" + d.quality());
-        System.out.println("镜头:" + d.camera());
-        System.out.println("叙事:" + d.narrative());
-        System.out.println("动作:" + d.action());
         System.out.println("\n" + line);
         System.out.println("【完整提示词(可直接复制到 cineART/即梦/可灵等使用)】");
         System.out.println(line);
@@ -46,15 +49,6 @@ public class ScriptWriter {
         sb.append("剧情:").append(loc.plot()).append("\n");
         sb.append("名场面:").append(loc.iconicVisual()).append("\n\n");
         sb.append("[世界观氛围]\n").append(world.toText()).append("\n\n");
-        sb.append("[镜头设计]\n");
-        sb.append("主体:").append(d.subject()).append("\n");
-        sb.append("服装:").append(d.clothing()).append("\n");
-        sb.append("场景:").append(d.setting()).append("\n");
-        sb.append("风格:").append(d.style()).append("\n");
-        sb.append("画质:").append(d.quality()).append("\n");
-        sb.append("镜头:").append(d.camera()).append("\n");
-        sb.append("叙事:").append(d.narrative()).append("\n");
-        sb.append("动作:").append(d.action()).append("\n\n");
         sb.append("[完整提示词]\n").append(fullPrompt).append("\n");
         Files.writeString(out, sb.toString(), StandardCharsets.UTF_8);
         System.out.println("\n已保存到: " + out.toAbsolutePath());
