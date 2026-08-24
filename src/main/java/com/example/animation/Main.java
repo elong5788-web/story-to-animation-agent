@@ -57,36 +57,6 @@ public class Main {
 
     private static final ObjectMapper mapper = new ObjectMapper();
 
-    /** 内容定位助手:搜索知识,定位具体桥段 + 推荐风格 */
-    static final String LOCALIZE_PROMPT = "你是一个内容定位助手。"
-            + "请搜索你的知识,把用户的一句话定位成一个具体的桥段/名场面,用 JSON 输出,格式严格为:"
-            + "{\"work\":\"作品名\",\"scene\":\"具体桥段名\",\"characters\":\"主要角色\","
-            + "\"plot\":\"剧情概要\",\"iconicVisual\":\"标志性画面\",\"style\":\"推荐图像风格\"}。"
-            + "style 必须从这些里选一个(兼顾题材和画风):"
-            + "东方玄幻仙侠 / 西方奇幻史诗 / 武侠水墨 / 科幻赛博朋克 / 都市写实 / 末世废土 / 动漫二次元 / 像素风。"
-            + "只输出 JSON,不要任何解释。";
-
-    /** 世界观构建师:强调维度写足,弱化维度简短,别编造 */
-    static final String WORLD_PROMPT = "你是一个奇幻世界观构建师。"
-            + "请根据用户输入,构建这个世界的「氛围」,用 JSON 输出,格式严格为:"
-            + "{\"tone\":\"基调\",\"scale\":\"尺度\",\"mystery\":\"神秘感\",\"wonder\":\"奇观\","
-            + "\"palette\":\"色调\",\"lighting\":\"光线\",\"weather\":\"气象\",\"culture\":\"文化\"}。"
-            + "重点字段(写 1~2 句、有画面感):palette 色调、lighting 光线、scale 尺度、wonder 奇观。"
-            + "次要字段(只要几个词):tone 基调、mystery 神秘感、weather 气象、culture 文化。"
-            + "贴合作品原意,不要编造原文没有的设定。只输出 JSON。";
-
-    /** 提示词工程师:在已锁定世界观基础上,拆 8 个画面/动作维度 */
-    static final String EXPANDER_PROMPT = "你是一个专业的 AI 视频提示词工程师。"
-            + "已锁定的世界观氛围如下:\n%s\n"
-            + "请在这个世界观基础上,把用户的一句话拆成 8 个维度,用 JSON 输出,格式严格为:"
-            + "{\"subject\":\"主体\",\"clothing\":\"服装\",\"setting\":\"场景\",\"style\":\"风格\",\"quality\":\"画质\","
-            + "\"camera\":\"镜头\",\"narrative\":\"叙事\",\"action\":\"动作\"}。"
-            + "各字段写什么:subject=人物/主体外貌、表情、姿势;clothing=服装款式材质颜色配饰;"
-            + "setting=具体地点环境;style=具体画风,必须简短几个词(如:中国水墨画/写实电影/二次元动漫/油画/赛博朋克);quality=画质关键词(4K, cinematic, ultra-detailed);"
-            + "camera=景别/角度/运镜/焦点/构图;narrative=故事感/情绪张力;action=动作过程/节奏。"
-            + "这 8 个维度必须逻辑自洽、互相呼应:叙事要贴合主体和场景氛围,动作要由叙事和场景自然推导,"
-            + "前后不能矛盾或突兀。每个字段写一两句具体内容。只输出 JSON,不要任何解释。";
-
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
         Files.createDirectories(Path.of(OUTPUT_DIR));
@@ -131,7 +101,7 @@ public class Main {
 
     /** 情节定位:搜索知识,识别桥段/角色/风格 */
     static Localization generateLocalization(DeepSeekClient ds, String input) throws Exception {
-        String reply = ds.chat(LOCALIZE_PROMPT, input);
+        String reply = ds.chat(Prompts.localize(), input);
         String json = TextUtil.stripCodeFence(reply);
         try {
             JsonNode n = mapper.readTree(json);
@@ -173,7 +143,7 @@ public class Main {
 
     /** 生成世界观(氛围 8 子维度) */
     static WorldBuilding generateWorld(DeepSeekClient ds, String input) throws Exception {
-        String reply = ds.chat(WORLD_PROMPT, input);
+        String reply = ds.chat(Prompts.world(), input);
         String json = TextUtil.stripCodeFence(reply);
         try {
             JsonNode n = mapper.readTree(json);
@@ -220,7 +190,7 @@ public class Main {
 
     /** 基于世界观,拆 8 个画面/动作维度 */
     static ShotDesign generatePrompt(DeepSeekClient ds, String input, WorldBuilding world) throws Exception {
-        String prompt = EXPANDER_PROMPT.formatted(world.toCoreText());
+        String prompt = Prompts.expand().formatted(world.toCoreText());
         String reply = ds.chat(prompt, input);
         String json = TextUtil.stripCodeFence(reply);
         try {
