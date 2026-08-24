@@ -20,30 +20,37 @@ public class WorldBuilder {
     }
 
     static WorldBuilding generate(DeepSeekClient ds, String input) throws Exception {
-        WorldBuilding last = null;
-        // 最多重试 3 次,防止 DeepSeek 输出格式不对(把内容塞进单个字段)
-        for (int attempt = 0; attempt < 3; attempt++) {
-            String reply = ds.chat(Prompts.world(), input);
-            String json = TextUtil.stripCodeFence(reply);
+        String reply = ds.chat(Prompts.world(), input);
+        String json = TextUtil.stripCodeFence(reply);
+        try {
+            JsonNode n = mapper.readTree(json);
+            return parseWorld(n);
+        } catch (Exception e) {
+            return new WorldBuilding(json, "", "", "", "", "", "", "");
+        }
+    }
+
+    /** 解析世界 JSON,处理"内容被嵌套塞进 tone 字段"的情况 */
+    private static WorldBuilding parseWorld(JsonNode n) {
+        String tone = n.path("tone").asText("");
+        // 如果 tone 字段里塞了完整的嵌套 JSON,就把它当作真正的 world 重新解析
+        if (tone.startsWith("{")) {
             try {
-                JsonNode n = mapper.readTree(json);
-                WorldBuilding w = new WorldBuilding(
-                        n.path("tone").asText(""), n.path("scale").asText(""),
-                        n.path("mystery").asText(""), n.path("wonder").asText(""),
-                        n.path("palette").asText(""), n.path("lighting").asText(""),
-                        n.path("weather").asText(""), n.path("culture").asText(""));
-                last = w;
-                // 强调字段(色调/光线/尺度/奇观)都非空才算解析成功
-                if (!w.palette().isBlank() && !w.lighting().isBlank()
-                        && !w.scale().isBlank() && !w.wonder().isBlank()) {
-                    return w;
-                }
+                JsonNode nested = mapper.readTree(tone);
+                return new WorldBuilding(
+                        nested.path("tone").asText(""), nested.path("scale").asText(""),
+                        nested.path("mystery").asText(""), nested.path("wonder").asText(""),
+                        nested.path("palette").asText(""), nested.path("lighting").asText(""),
+                        nested.path("weather").asText(""), nested.path("culture").asText(""));
             } catch (Exception ignored) {
-                // JSON 解析失败,重试
+                // 嵌套解析失败,退回扁平解析
             }
         }
-        // 兜底:重试后仍失败,返回最后一次结果
-        return last != null ? last : new WorldBuilding("", "", "", "", "", "", "", "");
+        return new WorldBuilding(
+                tone, n.path("scale").asText(""), n.path("mystery").asText(""),
+                n.path("wonder").asText(""), n.path("palette").asText(""),
+                n.path("lighting").asText(""), n.path("weather").asText(""),
+                n.path("culture").asText(""));
     }
 
     static WorldBuilding review(Scanner sc, DeepSeekClient ds, String input, WorldBuilding world) throws Exception {
