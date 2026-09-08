@@ -22,6 +22,14 @@ public class Prompts {
         return read("prompts/expand.txt");
     }
 
+    public static String novel() {
+        return read("prompts/novel.txt");
+    }
+
+    public static String storyboard() {
+        return read("prompts/storyboard.txt");
+    }
+
     private static String read(String path) {
         try {
             return Files.readString(Path.of(path), StandardCharsets.UTF_8);

@@ -6,10 +6,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Scanner;
 
 /**
- * 输入处理:读取用户输入(粘贴/文件/默认),以及时间戳、路径转换等杂活。
+ * 输入处理:读用户输入(粘贴/文件/默认),以及时间戳、路径转换等杂活。
  */
 public class InputHandler {
 
@@ -18,26 +17,15 @@ public class InputHandler {
         return LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
     }
 
-    /** 读多行文字,直到空行(用于粘贴长文字/小说片段) */
-    public static String readRest(Scanner sc) {
-        StringBuilder sb = new StringBuilder();
-        while (sc.hasNextLine()) {
-            String line = sc.nextLine();
-            if (line.isBlank()) break;
-            sb.append(line).append("\n");
-        }
-        return sb.toString().trim();
-    }
-
     /** 解析输入:空则用默认;是文件路径则读文件;否则当粘贴文字 */
-    public static String resolveInput(String typed, String fromFile) throws Exception {
+    public static String resolveInput(Console console, String typed, String fromFile) throws Exception {
         if (typed.isBlank()) return fromFile;
         if (!typed.contains("\n")) {
             try {
                 Path p = Path.of(normalizePath(typed));
                 if (Files.exists(p) && Files.isRegularFile(p)) {
-                    System.out.println("(已读取文件: " + p + ")");
-                    return readTextFile(p);
+                    console.println("(已读取文件: " + p + ")");
+                    return readTextFile(console, p);
                 }
             } catch (Exception ignored) {
             }
@@ -55,7 +43,7 @@ public class InputHandler {
     }
 
     /** 读文本文件:自动识别 UTF-8/GBK,太长截断到前 3000 字 */
-    public static String readTextFile(Path p) throws Exception {
+    public static String readTextFile(Console console, Path p) throws Exception {
         byte[] bytes = Files.readAllBytes(p);
         String content = new String(bytes, StandardCharsets.UTF_8);
         if (content.contains("\uFFFD")) {
@@ -63,7 +51,7 @@ public class InputHandler {
         }
         content = content.trim();
         if (content.length() > 3000) {
-            System.out.println("(文件太大,只取前 3000 字)");
+            console.println("(文件太大,只取前 3000 字)");
             content = content.substring(0, 3000);
         }
         return content;

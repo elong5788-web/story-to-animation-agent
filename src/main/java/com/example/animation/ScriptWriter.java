@@ -9,7 +9,7 @@ import java.nio.file.Path;
  */
 public class ScriptWriter {
 
-    public static void write(Localization loc, WorldBuilding world, ShotDesign d, String stamp) throws Exception {
+    public static void write(Console console, Localization loc, WorldBuilding world, ShotDesign d, String stamp) throws Exception {
         String line = "-----------------------------------------------";
 
         // 渲染成专业 VIDEOPROMPT(对齐 AIGC 教程的 6 段式结构)
@@ -31,21 +31,21 @@ public class ScriptWriter {
         full.append("【限制】").append(d.negative());
         String fullPrompt = full.toString();
 
-        System.out.println("\n" + line);
-        System.out.println("【最终分镜脚本】");
-        System.out.println(line);
-        System.out.println("作品:" + loc.work() + " · " + loc.scene());
-        System.out.println("角色:" + loc.characters());
-        System.out.println("剧情:" + loc.plot());
-        System.out.println("名场面:" + loc.iconicVisual());
-        System.out.println("风格:" + loc.style());
-        System.out.println("\n[世界观氛围]");
-        System.out.println(world.toText());
-        System.out.println("\n" + line);
-        System.out.println("【完整提示词(可直接复制到 cineART/即梦/可灵等使用)】");
-        System.out.println(line);
-        System.out.println(fullPrompt);
-        System.out.println(line);
+        console.println("\n" + line);
+        console.println("【最终分镜脚本】");
+        console.println(line);
+        console.println("作品:" + loc.work() + " · " + loc.scene());
+        console.println("角色:" + loc.characters());
+        console.println("剧情:" + loc.plot());
+        console.println("名场面:" + loc.iconicVisual());
+        console.println("风格:" + loc.style());
+        console.println("\n[世界观氛围]");
+        console.println(world.toText());
+        console.println("\n" + line);
+        console.println("【完整提示词(可直接复制到 cineART/即梦/可灵等使用)】");
+        console.println(line);
+        console.println(fullPrompt);
+        console.println(line);
 
         Path out = Path.of("output", "prompt-" + stamp + ".txt");
         StringBuilder sb = new StringBuilder();
@@ -56,6 +56,6 @@ public class ScriptWriter {
         sb.append("[世界观氛围]\n").append(world.toText()).append("\n\n");
         sb.append("[完整提示词]\n").append(fullPrompt).append("\n");
         Files.writeString(out, sb.toString(), StandardCharsets.UTF_8);
-        System.out.println("\n已保存到: " + out.toAbsolutePath());
+        console.println("\n已保存到: " + out.toAbsolutePath());
     }
 }

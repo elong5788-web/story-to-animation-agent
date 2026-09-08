@@ -1,74 +1,70 @@
 # story-to-animation-agent
 
-一个 **AI 视频提示词工程 agent**(数字导演):输入一句想法,自动完成「情节定位 → 世界观 → 6 段式分镜设计 → 用户审查」,产出一份**专业级 VIDEOPROMPT**,可直接复制到 cineART / 即梦 / 可灵 / Seedance 等工具生成视频。
+一个 **AI 动画提示词 agent**（数字导演）。支持两种模式：
 
-> 重点:它的核心产出是**提示词和分镜脚本**,不是视频本身。视频生成只是可选的"预览短片"。
+## 模式一：短片模式（一句话 → 专业提示词）
 
-## 核心流程(6 步,每步都可人工审查)
+输入一句想法 → 情节定位 → 世界观 → 6 段式分镜 → 产出 VIDEOPROMPT（可复制到即梦 / 可灵 / Seedance 等使用），可选生成预览视频。
 
-```
-输入想法
-  → ① 情节定位(识别作品/桥段/角色/风格)
-  → ② 世界观(氛围:色调/光线/尺度/奇观)
-  → ③ 6 段式分镜设计(角色/场景/画风画质/时间轴/声音/限制)
-  → ④ 产出 VIDEOPROMPT(打印 + 存 txt)
-  → ⑤ 可选:生成预览短片(默认 5 秒)
-```
+## 模式二：读小说模式（小说 → 多镜头分镜 + 配图）
 
-每一步都是「AI 生成 → 你审查 → 不满意就改 → 满意才继续」(human-in-the-loop)。
-
-## 产出的 VIDEOPROMPT 结构(6 段式)
-
-对齐 AIGC 教程的专业写法:
+输入一段小说（超过 100 字自动进入）→ 故事拆解（角色卡 / 世界观 / 情节分段）→ 多镜头分镜 → 每个镜头生成一张关键帧图 + 描述。
 
 ```
-【基础设定】角色(完整外貌+服装)+ 场景
-【氛围与画质】画风 + 画质(胶片/镜头/布光/色彩)+ 氛围
-【画面内容】timeline 时间分段(每段:时间/景别/动作/运镜/情绪)
-【声音】同期声/环境音
-【限制】负面约束(no text、no watermark、避免塑料感…)
+输入小说
+  → ① 故事拆解：角色卡 / 画风 / 世界观 / 情节分段
+  → ② 多镜头分镜：每个镜头有 场景/景别/动作/运镜/情绪
+  → ③ 每个镜头生成关键帧图 + 一句描述（用途/画面/运镜/情绪）
 ```
 
-核心亮点:
+## 核心特性
 
-- **一致性铁律**:锁定风格/角色/氛围,全片一套,禁止换人改风格
-- **电影摄影参数**:35mm 胶片、Kodak Vision3、ARRI Alexa、Cooke 镜头、伦勃朗布光、LogC4、4300K 色温…
-- **FACS 面部编码(AU 码)**:AU1 内眉上抬、AU4 眉毛下压、AU7 眼睑收紧…,情绪用肌肉指令不写形容词
-- **运镜手法清单**:低机位匀速推进、弧形环绕、FPV 穿越、8mm 鱼眼、康斯坦丁运镜、杜琪峰站位…
+- **RAG 检索增强**：内置 50 份高质量提示词语料库（`corpus.json`，已打分 + 打标签），分镜设计时自动检索相关范例做 few-shot。
+- **Agent 架构**：`Skill` 抽象 + `Agent` 编排 + `Console` 解耦 + `Context` 状态，能力可插拔、可扩展。
+- **一致性铁律**：角色 / 风格 / 氛围全片锁定，禁止换人改风格。
+- **电影级提示词**：FACS 面部编码（AU 码）、运镜手法清单、电影摄影参数。
 
 ## 技术栈
 
-- Java 17 + Maven(mvnw wrapper)
-- Jackson(JSON 解析)
-- DeepSeek API(文本大脑:定位/世界观/分镜设计)
-- 火山引擎 Ark:Seedream(文生图)、Seedance(视频生成,可选)
-
-## 架构(15 个类,职责清晰)
-
-```
-Main(纯编排) → Localizer / WorldBuilder / ShotDesigner / ScriptWriter / VideoGenerator
-             → DeepSeekClient / ImageClient / VideoClient(外部服务)
-             → Localization / WorldBuilding / ShotDesign(数据模型)
-             → Config / Prompts / InputHandler / TextUtil(基础设施)
-```
-
-提示词放在 `prompts/*.txt`,改提示词 = 改 txt 文件,不用改代码。
+- Java 17 + Maven（mvnw wrapper）
+- Jackson（JSON）
+- DeepSeek（文本大脑：定位 / 世界观 / 分镜 / 小说拆解）
+- 火山引擎 Ark：Seedream（文生图）、Seedance（视频生成，可选）
 
 ## 怎么运行
 
-1. 在 `config.properties` 里填两个密钥(已 gitignore,不会上传):
-   - `DEEPSEEK_API_KEY`(DeepSeek)
-   - `ARK_API_KEY`(火山引擎 Ark)
-2. 运行:
+1. 在 `config.properties` 里填两个密钥（已 gitignore）：
+   - `DEEPSEEK_API_KEY`（DeepSeek）
+   - `ARK_API_KEY`（火山引擎 Ark）
+2. 运行：
 
 ```bash
-./mvnw -q compile exec:java -Dexec.mainClass=com.example.animation.Main
+./mvnw compile exec:java
 ```
 
-3. 输入你的想法(直接打字 / 粘贴小说片段 / 输 txt 文件路径),一路审查,最后得到 VIDEOPROMPT。
+3. 输入一句话（走短片模式）或一段小说（超过 100 字走读小说模式），一路审查产出。
 
-## 文档
+## 测试
 
-- [架构设计](docs/ARCHITECTURE.md)
-- [路线图](docs/ROADMAP.md)
-- [Seedance API 参考](docs/SEEDANCE-API.md)
+```bash
+./mvnw test
+```
+
+覆盖：检索加权（核心词权重 > 宽泛词）、关键帧/动作提示词拼接。
+
+## 目录结构
+
+```
+src/main/java/com/example/animation/
+  ├── Skill.java / Agent.java / Console.java / Context.java   # agent 骨架
+  ├── Localizer / WorldBuilder / ShotDesigner                 # 短片模式三步
+  ├── NovelParser / StoryboardDesigner                        # 读小说模式
+  ├── ShotImageGenerator / StoryboardWriter                   # 配图 + 产出
+  ├── Retriever / CorpusEntry                                 # RAG 检索
+  └── DeepSeekClient / ImageClient / VideoClient              # 外部服务
+prompts/      # 提示词模板（改提示词 = 改 txt）
+corpus.json   # RAG 语料库（50 份打分 + 标签的提示词）
+output/       # 产出（分镜脚本 / 关键帧图）
+```
+
+> 语料库的生成脚本（提取 → 清洗打分 → 切分）在上级目录的 `corpus_tools/` 下（Python）。

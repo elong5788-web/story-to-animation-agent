@@ -24,10 +24,24 @@ public class DeepSeekClient {
 
     /** 把系统提示 + 用户消息发给 DeepSeek,返回它的回复文字 */
     public String chat(String systemPrompt, String userMessage) throws Exception {
+        return chat(systemPrompt, userMessage, false);
+    }
+
+    /** 结构化输出:要求 DeepSeek 只返回合法 JSON(定位/世界观/分镜用) */
+    public String chatJson(String systemPrompt, String userMessage) throws Exception {
+        return chat(systemPrompt, userMessage, true);
+    }
+
+    private String chat(String systemPrompt, String userMessage, boolean jsonMode) throws Exception {
         String apiKey = Config.get("DEEPSEEK_API_KEY");
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("请在 config.properties 里填 DEEPSEEK_API_KEY(或设置环境变量)");
         }
+
+        // json 模式:要求返回纯 JSON。DeepSeek 要求 prompt 里含 "json" 字样(我们的提示词都满足)
+        String responseFormat = jsonMode ? ",\n  \"response_format\": {\"type\": \"json_object\"}" : "";
+        // json 模式用低温,保证结构化输出稳定(字段不漏、格式不乱);自由文本保持高温要创意
+        String temperature = jsonMode ? "0.3" : "1.0";
 
         String body = """
                 {
@@ -36,9 +50,9 @@ public class DeepSeekClient {
                     {"role": "system", "content": "%s"},
                     {"role": "user", "content": "%s"}
                   ],
-                  "temperature": 1.0
+                  "temperature": %s%s
                 }
-                """.formatted(MODEL, escape(systemPrompt), escape(userMessage));
+                """.formatted(MODEL, escape(systemPrompt), escape(userMessage), temperature, responseFormat);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(API_URL))

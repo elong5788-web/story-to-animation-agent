@@ -2,48 +2,62 @@ package com.example.animation;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Scanner;
+import java.util.List;
 
 /**
- * 主程序:纯流程编排,不掺和具体逻辑。
- * 输入 → 情节定位 → 世界观 → 分镜设计(6 段式) → 产出 → 可选生成预览视频。
+ * 入口:组装 agent(控制台 + 共享 DeepSeekClient + skill 流水线)并启动。
+ * 输入 → 情节定位 → 世界观 → 分镜设计 → 产出 → 可选生成预览视频。
  */
 public class Main {
 
     public static void main(String[] args) throws Exception {
-        Scanner sc = new Scanner(System.in);
+        Console console = new SystemConsole();
+        DeepSeekClient ds = new DeepSeekClient();
         Files.createDirectories(Path.of("output"));
         String stamp = InputHandler.timestamp();
 
         // 1. 输入
         String fromFile = InputHandler.readStory(args);
-        System.out.println("当前 story.txt: " + fromFile);
-        System.out.println("输入画面(回车用上面的;可粘贴多行文字,或输入 .txt 文件路径;空行结束): ");
-        String typed = InputHandler.readRest(sc);
-        String input = InputHandler.resolveInput(typed, fromFile);
-        System.out.println("你的输入: " + input);
+        console.println("当前 story.txt: " + fromFile);
+        console.println("输入画面(回车用上面的;可粘贴多行文字,或输入 .txt 文件路径;空行结束): ");
+        String typed = console.readRest();
+        String input = InputHandler.resolveInput(console, typed, fromFile);
+        console.println("你的输入: " + input);
 
-        // 2. 情节定位
-        Localization loc = Localizer.run(sc, input);
-        if (loc == null) return;
-        String context = input + "\n\n[定位信息]\n" + loc.toText();
+        // 2. 组装并运行 agent
+        Context ctx = new Context(input);
+        if (input.length() > 100) {
+            // 读小说模式:小说 → 拆解 → 多镜头分镜
+            Agent agent = new Agent(List.of(
+                    new NovelParser(ds),
+                    new StoryboardDesigner(ds)));
+            agent.run(ctx, console);
+            if (ctx.cancelled()) return;
+            StoryboardWriter.write(console, ctx.novelBreakdown(), ctx.storyBoard(), stamp);
 
-        // 3. 世界观
-        WorldBuilding world = WorldBuilder.run(sc, context);
-        if (world == null) return;
+            // 第 2 步:给每个镜头生成关键帧图 + 描述
+            console.print("\n要不要给每个镜头生成关键帧图 + 描述?(y=生成,回车跳过): ");
+            String genImg = console.readLine();
+            if (genImg != null && (genImg.trim().equalsIgnoreCase("y") || genImg.trim().equalsIgnoreCase("yes"))) {
+                ShotImageGenerator.generate(console, ctx.novelBreakdown(), ctx.storyBoard(), stamp);
+            }
+        } else {
+            // 短片模式:一句话 → 定位 → 世界观 → 分镜
+            Retriever retriever = new Retriever();
+            Agent agent = new Agent(List.of(
+                    new Localizer(ds),
+                    new WorldBuilder(ds),
+                    new ShotDesigner(ds, retriever)));
+            agent.run(ctx, console);
+            if (ctx.cancelled()) return;
+            ScriptWriter.write(console, ctx.loc(), ctx.world(), ctx.design(), stamp);
+        }
 
-        // 4. 分镜设计(6 段式 VIDEOPROMPT:角色/场景/画风画质/时间轴/声音/限制)
-        ShotDesign design = ShotDesigner.run(sc, context, loc, world);
-        if (design == null) return;
-
-        // 5. 产出:分镜脚本 + 提示词
-        ScriptWriter.write(loc, world, design, stamp);
-
-        // 6. 可选:生成预览短片(默认 5 秒)
-        System.out.print("\n要不要顺便生成视频/图片?(y=生成,回车跳过): ");
-        String gen = sc.hasNextLine() ? sc.nextLine().trim() : "";
+        // 4. 可选:生成预览短片(默认 5 秒)
+        console.print("\n要不要顺便生成视频/图片?(y=生成,回车跳过): ");
+        String gen = console.readLine().trim();
         if (gen.equalsIgnoreCase("y") || gen.equalsIgnoreCase("yes")) {
-            VideoGenerator.generateShortVideo(sc, design, stamp);
+            VideoGenerator.generateShortVideo(console, ctx.design(), stamp);
         }
     }
 }
