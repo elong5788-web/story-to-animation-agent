@@ -24,9 +24,9 @@ public class Main {
         String input = InputHandler.resolveInput(console, typed, fromFile);
         console.println("你的输入: " + input);
 
-        // 2. 组装并运行 agent
+        // 2. 选模式:显式确认,别再用字数猜(一句话写长一点就会误入小说模式)
         Context ctx = new Context(input);
-        if (input.length() > 100) {
+        if (chooseNovelMode(console, input)) {
             // 读小说模式:小说 → 拆解 → 多镜头分镜
             Agent agent = new Agent(List.of(
                     new NovelParser(ds),
@@ -59,5 +59,20 @@ public class Main {
         if (gen.equalsIgnoreCase("y") || gen.equalsIgnoreCase("yes")) {
             VideoGenerator.generateShortVideo(console, ctx.design(), stamp);
         }
+    }
+
+    /** 选模式:按字数给默认建议,用户回车确认或显式指定 1/2。 */
+    private static boolean chooseNovelMode(Console console, String input) {
+        boolean guess = input.length() > 100;
+        console.println("\n选择运行模式:");
+        console.println("  1. 短片模式 — 一句话 → 单个镜头提示词 + 可选预览视频");
+        console.println("  2. 读小说模式 — 小说 → 多镜头分镜 + 每镜配图");
+        console.print("回车 = 自动(" + (guess ? "读小说" : "短片") + "),或输入 1/2: ");
+        String choice = console.readLine();
+        if (choice == null) return guess;
+        choice = choice.trim();
+        if (choice.equals("1")) return false;
+        if (choice.equals("2")) return true;
+        return guess;
     }
 }

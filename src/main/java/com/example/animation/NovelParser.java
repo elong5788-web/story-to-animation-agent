@@ -19,6 +19,11 @@ public class NovelParser extends Skill<NovelBreakdown> {
         String user = ctx.input() + (feedback == null ? "" : feedback);
         String reply = ds.chatJson(Prompts.novel(), user);
         JsonNode n = mapper.readTree(reply);
+        String characters = n.path("characters").asText("");
+        if (characters.isBlank()) {
+            // 角色卡是锁一致性的根基,为空直接判失败,交给基类的重试机制再问一次
+            throw new IllegalStateException("角色卡为空");
+        }
         WorldBuilding world = new WorldBuilding(
                 n.path("world").path("tone").asText(""),
                 n.path("world").path("scale").asText(""),
@@ -35,7 +40,7 @@ public class NovelParser extends Skill<NovelBreakdown> {
             }
         }
         return new NovelBreakdown(
-                n.path("characters").asText(""),
+                characters,
                 n.path("style").asText(""),
                 world,
                 segments);

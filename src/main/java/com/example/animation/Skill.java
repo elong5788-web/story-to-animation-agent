@@ -67,6 +67,9 @@ public abstract class Skill<T> {
                 last = e;
                 if (attempt < 3) {
                     console.println("   (第 " + attempt + " 次失败,自动重试: " + e.getMessage() + ")");
+                    // 把失败原因当补充反馈喂给下一次,让模型知道该修什么(如"角色卡为空")
+                    feedback = (feedback == null ? "" : feedback)
+                            + "\n\n(上次生成失败:" + e.getMessage() + ",请修正后重新输出)";
                 }
             }
         }
@@ -76,7 +79,7 @@ public abstract class Skill<T> {
     private T review(Context ctx, Console console, T current) throws Exception {
         while (true) {
             show(current, console);
-            console.println("  · y=满意 / n=取消 / r=换一个 / 其他=修改意见");
+            console.println("  · y=满意 / n=取消 / r=换一个 / 其他=输入修改意见(回车提交)");
             console.print("> ");
             String answer = console.readLine();
             if (answer == null) return null;  // 输入流结束(非交互),安全退出,避免死循环
@@ -90,7 +93,7 @@ public abstract class Skill<T> {
             if (answer.equalsIgnoreCase("r") || answer.equals("换一个")) {
                 feedback = alternateHint();
             } else {
-                feedback = feedbackText(answer + "\n" + console.readRest(), current);
+                feedback = feedbackText(answer, current);  // 单行意见即可;原来的 readRest() 会让用户以为打字没用(要按两次回车)
             }
             try {
                 current = generateWithRetry(ctx, console, feedback);

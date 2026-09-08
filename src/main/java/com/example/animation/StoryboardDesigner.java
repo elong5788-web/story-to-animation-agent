@@ -29,7 +29,8 @@ public class StoryboardDesigner extends Skill<StoryBoard> {
                     s.path("framing").asText(""),
                     s.path("action").asText(""),
                     s.path("camera").asText(""),
-                    s.path("emotion").asText("")));
+                    s.path("emotion").asText(""),
+                    s.path("quality").asText("")));
         }
         return new StoryBoard(shots);
     }
@@ -43,6 +44,7 @@ public class StoryboardDesigner extends Skill<StoryBoard> {
             console.println("  场景:" + s.scene());
             console.println("  动作:" + s.action());
             console.println("  运镜:" + s.camera() + " | 情绪:" + s.emotion());
+            console.println("  画质:" + s.quality());
         }
     }
 

@@ -22,6 +22,7 @@ public class StoryboardWriter {
             sb.append("  场景:").append(s.scene()).append("\n");
             sb.append("  动作:").append(s.action()).append("\n");
             sb.append("  运镜:").append(s.camera()).append(" | 情绪:").append(s.emotion()).append("\n");
+            sb.append("  画质:").append(s.quality()).append("\n");
         }
 
         console.println("\n" + line);
