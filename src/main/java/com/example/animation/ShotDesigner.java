@@ -21,13 +21,14 @@ public class ShotDesigner extends Skill<ShotDesign> {
     protected ShotDesign generateOnce(Context ctx, String feedback) throws Exception {
         String prompt = Prompts.expand().formatted(ctx.loc().style(), ctx.loc().characters(), ctx.world().toCoreText());
         String user = ctx.withLoc() + (feedback == null ? "" : feedback);
-        // RAG: 检索语料库里的相关范例做 few-shot
-        List<String> refs = retriever.retrieve(ctx.loc().style(), 3, 800);
+        // RAG: 检索语料库里的相关范例做 few-shot(query 富化:风格+桥段+剧情+核心氛围)
+        String ragQuery = String.join(" ", ctx.loc().style(), ctx.loc().scene(), ctx.loc().plot(), ctx.world().toCoreText());
+        List<RetrievalResult> refs = retriever.retrieve(ragQuery, 3);
         if (!refs.isEmpty()) {
             StringBuilder sb = new StringBuilder(user);
             sb.append("\n\n[参考范例(来自高质量语料库,可借鉴运镜/情绪/氛围写法,但不要照抄)]\n");
-            for (String ref : refs) {
-                sb.append("\n---\n").append(ref);
+            for (RetrievalResult r : refs) {
+                sb.append("\n---\n").append(r.chunk().text());
             }
             user = sb.toString();
         }

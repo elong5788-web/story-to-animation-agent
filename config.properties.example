@@ -14,3 +14,13 @@ IMAGE_SIZE=2K
 
 # 视频分辨率,默认 720p。
 RESOLUTION=720p
+
+# RAG 语义检索(可选):实测在 761 片段规模下,多模态 embedding(纯文本输入)让召回变差
+# (precision@3 0.60→0.47),故默认关。语料规模变大或换专用文本 embedding 模型后再开。
+RAG_EMBEDDING=false
+
+# embedding 模型(按你 Ark 账号实际开通的填)。
+EMBEDDING_MODEL=doubao-embedding-vision-251215
+
+# RAG 重排(可选):true 时召回后用 DeepSeek 精排,多花一次调用但 top-k 更准。
+RAG_RERANK=false

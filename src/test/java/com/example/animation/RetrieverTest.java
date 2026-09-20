@@ -4,33 +4,52 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RetrieverTest {
 
     @Test
-    void 核心词权重应高于宽泛词_赛博朋克召回科幻而非都市() {
-        CorpusEntry sciFi = new CorpusEntry("现成提示词", "科幻", "无", "写实", 7, "科幻角色素材", "科幻内容");
-        CorpusEntry urban = new CorpusEntry("现成提示词", "都市", "无", "写实", 7, "服装展示素材", "服装内容");
-        Retriever r = Retriever.of(List.of(sciFi, urban));
-
-        List<String> result = r.retrieve("科幻赛博朋克(霓虹冷调/全息/雨夜都市)", 2, 50);
-
-        assertFalse(result.isEmpty(), "应召回语料");
-        assertTrue(result.get(0).contains("科幻"),
-                "科幻(权重3)应排在都市(权重1)前面,实际第一是:" + result.get(0));
+    void 空查询返回空() {
+        Retriever r = Retriever.of(List.of(new Chunk("科幻", "推", "紧张", "写实", 7, "s", "正文")));
+        assertTrue(r.retrieve("", 3).isEmpty());
+        assertTrue(r.retrieve(null, 3).isEmpty());
     }
 
     @Test
-    void 无匹配时用方法论兜底() {
-        CorpusEntry method = new CorpusEntry("方法论", "通用", "通用", "通用", 9, "运镜方法论", "运镜内容");
-        CorpusEntry template = new CorpusEntry("结构模板", "通用", "无", "通用", 4, "分镜表模板", "模板内容");
-        Retriever r = Retriever.of(List.of(method, template));
+    void 正文相关度优先_科幻查询召回科幻而非都市() {
+        Chunk sciFi = new Chunk("科幻", "推", "紧张", "写实", 7, "科幻", "赛博朋克霓虹雨夜,全息投影,冷色调");
+        Chunk urban = new Chunk("都市", "推", "平静", "写实", 7, "都市", "城市街道阳光,自然光,生活感");
+        Retriever r = Retriever.of(List.of(sciFi, urban));
 
-        List<String> result = r.retrieve("像素风(颗粒像素/复古游戏)", 1, 50);
+        List<RetrievalResult> res = r.retrieve("科幻赛博朋克 霓虹冷调 雨夜", 2);
 
-        assertFalse(result.isEmpty(), "应兜底召回");
-        assertTrue(result.get(0).contains("运镜"), "无匹配时应兜底方法论,实际:" + result.get(0));
+        assertFalse(res.isEmpty(), "应召回");
+        assertEquals("赛博朋克霓虹雨夜,全息投影,冷色调", res.get(0).chunk().text(), "科幻应排第一");
+    }
+
+    @Test
+    void 标签命中加权_水墨画风片应召回水墨() {
+        Chunk ink = new Chunk("古风", "推", "温柔", "水墨", 8, "水墨", "远山淡墨,留白,写意");
+        Chunk oil = new Chunk("西方", "推", "温柔", "油画", 8, "油画", "厚重笔触,古典构图");
+        Retriever r = Retriever.of(List.of(ink, oil));
+
+        List<RetrievalResult> res = r.retrieve("水墨 写意 留白", 2);
+
+        assertFalse(res.isEmpty());
+        assertEquals("远山淡墨,留白,写意", res.get(0).chunk().text(), "水墨应排第一");
+    }
+
+    @Test
+    void 质量分先验_同内容高分排前() {
+        Chunk low = new Chunk("通用", "无", "无", "通用", 5, "s", "完全相同的正文内容");
+        Chunk high = new Chunk("通用", "无", "无", "通用", 9, "s", "完全相同的正文内容");
+        Retriever r = Retriever.of(List.of(low, high));
+
+        List<RetrievalResult> res = r.retrieve("正文内容", 2);
+
+        assertEquals(2, res.size());
+        assertEquals(9, res.get(0).chunk().score(), "高质量分应排前");
     }
 }

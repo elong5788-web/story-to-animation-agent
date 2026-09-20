@@ -19,7 +19,7 @@
 
 ## 核心特性
 
-- **RAG 检索增强**：内置 50 份高质量提示词语料库（`corpus.json`，已打分 + 打标签），分镜设计时自动检索相关范例做 few-shot。
+- **RAG 检索增强**：语料库「文档级 `corpus.json`(50 份打分+标签) → 片段级 `corpus_fragments.json`(800+ 条,带题材/运镜/情绪/画风标签)」，**倒排索引 + BM25 召回** + 可选**向量语义检索** + 可选 **LLM 重排**，分镜设计时自动检索相关范例做 few-shot。
 - **Agent 架构**：`Skill` 抽象 + `Agent` 编排 + `Console` 解耦 + `Context` 状态，能力可插拔、可扩展。
 - **一致性铁律**：角色 / 风格 / 氛围全片锁定，禁止换人改风格。
 - **电影级提示词**：FACS 面部编码（AU 码）、运镜手法清单、电影摄影参数。
@@ -60,11 +60,14 @@ src/main/java/com/example/animation/
   ├── Localizer / WorldBuilder / ShotDesigner                 # 短片模式三步
   ├── NovelParser / StoryboardDesigner                        # 读小说模式
   ├── ShotImageGenerator / StoryboardWriter                   # 配图 + 产出
-  ├── Retriever / CorpusEntry                                 # RAG 检索
+  ├── Chunk / ChunkStore / TextTokenizer / TextIndex          # RAG 分片/索引/BM25
+  ├── Retriever / Embedder / EmbeddingClient / EmbeddingCache # RAG 召回/向量
+  ├── Reranker / LlmReranker / RagEval                        # RAG 重排/评测
   └── DeepSeekClient / ImageClient / VideoClient              # 外部服务
-prompts/      # 提示词模板（改提示词 = 改 txt）
-corpus.json   # RAG 语料库（50 份打分 + 标签的提示词）
-output/       # 产出（分镜脚本 / 关键帧图）
+prompts/              # 提示词模板（改提示词 = 改 txt）
+corpus.json           # 文档级语料库（50 份打分 + 标签的提示词）
+corpus_fragments.json # 片段级语料库（800+ 条，带题材/运镜/情绪/画风标签）
+output/               # 产出（分镜脚本 / 关键帧图 / 向量缓存）
 ```
 
 > 语料库的生成脚本（提取 → 清洗打分 → 切分）在上级目录的 `corpus_tools/` 下（Python）。

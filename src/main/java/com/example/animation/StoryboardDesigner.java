@@ -10,8 +10,11 @@ import java.util.List;
  */
 public class StoryboardDesigner extends Skill<StoryBoard> {
 
-    public StoryboardDesigner(DeepSeekClient ds) {
+    private final Retriever retriever;
+
+    public StoryboardDesigner(DeepSeekClient ds, Retriever retriever) {
         super(ds);
+        this.retriever = retriever;
     }
 
     @Override
@@ -19,6 +22,17 @@ public class StoryboardDesigner extends Skill<StoryBoard> {
         NovelBreakdown b = ctx.novelBreakdown();
         String prompt = Prompts.storyboard().formatted(b.characters(), b.style(), b.world().toText());
         String user = ctx.input() + (feedback == null ? "" : feedback);
+        // RAG: 检索语料库里的运镜/情绪/氛围范例做 few-shot
+        String ragQuery = String.join(" ", b.style(), b.characters(), b.world().toText());
+        List<RetrievalResult> refs = retriever.retrieve(ragQuery, 3);
+        if (!refs.isEmpty()) {
+            StringBuilder sb = new StringBuilder(user);
+            sb.append("\n\n[参考范例(来自高质量语料库,可借鉴运镜/情绪/氛围写法,但不要照抄)]\n");
+            for (RetrievalResult r : refs) {
+                sb.append("\n---\n").append(r.chunk().text());
+            }
+            user = sb.toString();
+        }
         String reply = ds.chatJson(prompt, user);
         JsonNode n = mapper.readTree(reply);
         List<Shot> shots = new ArrayList<>();

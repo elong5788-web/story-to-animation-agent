@@ -26,11 +26,12 @@ public class Main {
 
         // 2. 选模式:显式确认,别再用字数猜(一句话写长一点就会误入小说模式)
         Context ctx = new Context(input);
+        Retriever retriever = new Retriever();
         if (chooseNovelMode(console, input)) {
             // 读小说模式:小说 → 拆解 → 多镜头分镜
             Agent agent = new Agent(List.of(
                     new NovelParser(ds),
-                    new StoryboardDesigner(ds)));
+                    new StoryboardDesigner(ds, retriever)));
             agent.run(ctx, console);
             if (ctx.cancelled()) return;
             StoryboardWriter.write(console, ctx.novelBreakdown(), ctx.storyBoard(), stamp);
@@ -43,7 +44,6 @@ public class Main {
             }
         } else {
             // 短片模式:一句话 → 定位 → 世界观 → 分镜
-            Retriever retriever = new Retriever();
             Agent agent = new Agent(List.of(
                     new Localizer(ds),
                     new WorldBuilder(ds),
