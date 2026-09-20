@@ -52,7 +52,7 @@ public class DeepSeekClient {
                   ],
                   "temperature": %s%s
                 }
-                """.formatted(MODEL, escape(systemPrompt), escape(userMessage), temperature, responseFormat);
+                """.formatted(MODEL, TextUtil.jsonEscape(systemPrompt), TextUtil.jsonEscape(userMessage), temperature, responseFormat);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(API_URL))
@@ -69,15 +69,8 @@ public class DeepSeekClient {
 
         // 从返回的大 JSON 里取出 choices[0].message.content 这段文字
         JsonNode root = mapper.readTree(response.body());
-        return root.path("choices").get(0).path("message").path("content").asText();
-    }
-
-    /** 把字符串转成能安全放进 JSON 的文本 */
-    static String escape(String s) {
-        return s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
+        String content = root.path("choices").get(0).path("message").path("content").asText();
+        // json 模式防御性剥掉模型偶尔加的 ```json ... ``` 外壳
+        return jsonMode ? TextUtil.stripCodeFence(content) : content;
     }
 }

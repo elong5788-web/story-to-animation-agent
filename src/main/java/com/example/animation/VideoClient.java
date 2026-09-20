@@ -27,7 +27,7 @@ public class VideoClient {
 
     /** 文生视频 */
     public String submit(String prompt, int durationSeconds) throws Exception {
-        String contentJson = "[{\"type\": \"text\", \"text\": \"%s\"}]".formatted(escape(prompt));
+        String contentJson = "[{\"type\": \"text\", \"text\": \"%s\"}]".formatted(TextUtil.jsonEscape(prompt));
         return submitTask(contentJson, durationSeconds);
     }
 
@@ -38,7 +38,7 @@ public class VideoClient {
                   {"type": "text", "text": "%s"},
                   {"type": "image_url", "image_url": {"url": "%s"}, "role": "first_frame"}
                 ]
-                """.formatted(escape(prompt), escape(imageUrl));
+                """.formatted(TextUtil.jsonEscape(prompt), TextUtil.jsonEscape(imageUrl));
         return submitTask(contentJson, durationSeconds);
     }
 
@@ -50,7 +50,7 @@ public class VideoClient {
                   {"type": "image_url", "image_url": {"url": "%s"}, "role": "first_frame"},
                   {"type": "image_url", "image_url": {"url": "%s"}, "role": "last_frame"}
                 ]
-                """.formatted(escape(prompt), escape(firstFrameUrl), escape(lastFrameUrl));
+                """.formatted(TextUtil.jsonEscape(prompt), TextUtil.jsonEscape(firstFrameUrl), TextUtil.jsonEscape(lastFrameUrl));
         return submitTask(contentJson, durationSeconds);
     }
 
@@ -92,7 +92,7 @@ public class VideoClient {
     }
 
     /** 轮询任务直到完成,返回视频下载地址 */
-    public String waitForVideo(String taskId) throws Exception {
+    public String waitForVideo(String taskId, Console console) throws Exception {
         String apiKey = Config.get("ARK_API_KEY");
         for (int i = 0; i < 60; i++) {   // 最多 60 次 × 5 秒 = 5 分钟
             HttpRequest request = HttpRequest.newBuilder()
@@ -103,7 +103,7 @@ public class VideoClient {
             HttpResponse<String> resp = http.send(request, HttpResponse.BodyHandlers.ofString());
             JsonNode node = mapper.readTree(resp.body());
             String status = node.path("status").asText();
-            System.out.println("   [进度] 第 " + (i + 1) + " 次查询: " + status);
+            console.println("   [进度] 第 " + (i + 1) + " 次查询: " + status);
             if ("succeeded".equals(status) || "success".equals(status)) {
                 return extractVideoUrl(node);
             }
@@ -140,13 +140,5 @@ public class VideoClient {
             throw new IllegalStateException("下载失败 HTTP " + resp.statusCode());
         }
         Files.write(dest, resp.body());
-    }
-
-    static String escape(String s) {
-        return s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
     }
 }

@@ -26,7 +26,7 @@ public class VideoGenerator {
         console.println("\n生成视频(图生视频,约 1~3 分钟)...");
         VideoClient video = new VideoClient();
         String taskId = video.submitImageToVideo(keyframe, motion, duration);
-        String url = video.waitForVideo(taskId);
+        String url = video.waitForVideo(taskId, console);
         Path out = Path.of("output", "video-" + stamp + ".mp4");
         video.download(url, out);
         console.println("视频已生成: " + out.toAbsolutePath());

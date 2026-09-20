@@ -30,7 +30,7 @@ public class ImageClient {
     public String textToImage(String prompt) throws Exception {
         String body = """
                 {"model": "%s", "prompt": "%s", "size": "%s", "watermark": false}
-                """.formatted(MODEL, escape(prompt), imageSize());
+                """.formatted(MODEL, TextUtil.jsonEscape(prompt), imageSize());
         return generate(body);
     }
 
@@ -38,7 +38,7 @@ public class ImageClient {
     public String imageToImage(String prompt, String referenceDataUrl) throws Exception {
         String body = """
                 {"model": "%s", "prompt": "%s", "image": ["%s"], "size": "%s", "watermark": false}
-                """.formatted(MODEL, escape(prompt), referenceDataUrl, imageSize());
+                """.formatted(MODEL, TextUtil.jsonEscape(prompt), referenceDataUrl, imageSize());
         return generate(body);
     }
 
@@ -97,11 +97,4 @@ public class ImageClient {
         return "data:image/" + fmt + ";base64," + b64;
     }
 
-    static String escape(String s) {
-        return s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
-    }
 }
