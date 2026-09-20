@@ -24,3 +24,7 @@ EMBEDDING_MODEL=doubao-embedding-vision-251215
 
 # RAG 重排(可选):true 时召回后用 DeepSeek 精排,多花一次调用但 top-k 更准。
 RAG_RERANK=false
+
+# 读小说出片:true = 用参考图模型锁定角色(需 Ark 开通 doubao-seedance-1-0-lite-i2v-250428);
+# false = 只靠关键帧角色卡锁定(现有 Seedance 2.0 即可)。
+USE_REFERENCE_IMAGE=false

@@ -27,7 +27,8 @@ public class Main {
         // 2. 选模式:显式确认,别再用字数猜(一句话写长一点就会误入小说模式)
         Context ctx = new Context(input);
         Retriever retriever = new Retriever();
-        if (chooseNovelMode(console, input)) {
+        boolean isNovel = chooseNovelMode(console, input);
+        if (isNovel) {
             // 读小说模式:小说 → 拆解 → 多镜头分镜
             Agent agent = new Agent(List.of(
                     new NovelParser(ds),
@@ -53,11 +54,15 @@ public class Main {
             ScriptWriter.write(console, ctx.loc(), ctx.world(), ctx.design(), stamp);
         }
 
-        // 4. 可选:生成预览短片(默认 5 秒)
-        console.print("\n要不要顺便生成视频/图片?(y=生成,回车跳过): ");
-        String gen = console.readLine().trim();
-        if (gen.equalsIgnoreCase("y") || gen.equalsIgnoreCase("yes")) {
-            VideoGenerator.generateShortVideo(console, ctx.design(), stamp);
+        // 4. 可选:生成视频(按模式分发)
+        console.print("\n要不要顺便生成视频?(y=生成,回车跳过): ");
+        String gen = console.readLine();
+        if (gen != null && (gen.trim().equalsIgnoreCase("y") || gen.trim().equalsIgnoreCase("yes"))) {
+            if (isNovel) {
+                NovelVideoGenerator.generate(console, ctx.novelBreakdown(), ctx.storyBoard(), stamp);
+            } else {
+                VideoGenerator.generateShortVideo(console, ctx.design(), stamp);
+            }
         }
     }
 

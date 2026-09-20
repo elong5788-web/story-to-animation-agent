@@ -13,12 +13,15 @@ import java.time.Duration;
 
 /**
  * 负责调用火山引擎 Ark 的 Seedance 视频生成(异步任务)。
- * 支持文生视频、图生视频(首帧)。
+ * 支持文生视频、图生视频(首帧)、首尾帧、参考图(锁定角色一致性)。
  */
 public class VideoClient {
 
     static final String BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
+    /** 文生视频 / 首帧 / 首尾帧 用的通用模型 */
     static final String MODEL = "doubao-seedance-2-0-fast-260128";
+    /** 参考图(锁定角色一致性)专用模型 */
+    static final String REFERENCE_MODEL = "doubao-seedance-1-0-lite-i2v-250428";
 
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
@@ -28,7 +31,7 @@ public class VideoClient {
     /** 文生视频 */
     public String submit(String prompt, int durationSeconds) throws Exception {
         String contentJson = "[{\"type\": \"text\", \"text\": \"%s\"}]".formatted(TextUtil.jsonEscape(prompt));
-        return submitTask(contentJson, durationSeconds);
+        return submitTask(MODEL, contentJson, durationSeconds);
     }
 
     /** 图生视频:以图片为首帧,让它动起来 */
@@ -39,7 +42,7 @@ public class VideoClient {
                   {"type": "image_url", "image_url": {"url": "%s"}, "role": "first_frame"}
                 ]
                 """.formatted(TextUtil.jsonEscape(prompt), TextUtil.jsonEscape(imageUrl));
-        return submitTask(contentJson, durationSeconds);
+        return submitTask(MODEL, contentJson, durationSeconds);
     }
 
     /** 首尾帧生视频:两张图定义起点和终点 */
@@ -51,16 +54,30 @@ public class VideoClient {
                   {"type": "image_url", "image_url": {"url": "%s"}, "role": "last_frame"}
                 ]
                 """.formatted(TextUtil.jsonEscape(prompt), TextUtil.jsonEscape(firstFrameUrl), TextUtil.jsonEscape(lastFrameUrl));
-        return submitTask(contentJson, durationSeconds);
+        return submitTask(MODEL, contentJson, durationSeconds);
     }
 
-    private String submitTask(String contentJson, int durationSeconds) throws Exception {
+    /** 参考图 + 首帧生视频:reference_image 锁定角色贯穿全片,first_frame 定义本镜起点 */
+    public String submitReferenceToVideo(String referenceDataUrl, String firstFrameDataUrl, String prompt, int durationSeconds) throws Exception {
+        String contentJson = """
+                [
+                  {"type": "text", "text": "%s"},
+                  {"type": "image_url", "image_url": {"url": "%s"}, "role": "reference_image"},
+                  {"type": "image_url", "image_url": {"url": "%s"}, "role": "first_frame"}
+                ]
+                """.formatted(TextUtil.jsonEscape(prompt), TextUtil.jsonEscape(referenceDataUrl), TextUtil.jsonEscape(firstFrameDataUrl));
+        return submitTask(REFERENCE_MODEL, contentJson, durationSeconds);
+    }
+
+    private String submitTask(String model, String contentJson, int durationSeconds) throws Exception {
         String apiKey = Config.get("ARK_API_KEY");
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("请在 config.properties 里填 ARK_API_KEY");
         }
         String resolution = Config.get("RESOLUTION");
-        if (resolution == null || resolution.isBlank()) resolution = "720p";
+        if (resolution == null || resolution.isBlank()) {
+            resolution = "720p";
+        }
 
         String body = """
                 {
@@ -70,7 +87,7 @@ public class VideoClient {
                   "resolution": "%s",
                   "generate_audio": false
                 }
-                """.formatted(MODEL, contentJson, durationSeconds, resolution);
+                """.formatted(model, contentJson, durationSeconds, resolution);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(BASE_URL + "/contents/generations/tasks"))
