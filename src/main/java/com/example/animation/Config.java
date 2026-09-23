@@ -46,7 +46,7 @@ public class Config {
         try {
             return Integer.parseInt(v.trim());
         } catch (NumberFormatException e) {
-            return defaultValue;
+            throw new IllegalArgumentException("配置项 " + key + " 必须是整数，当前值: " + v, e);
         }
     }
 }

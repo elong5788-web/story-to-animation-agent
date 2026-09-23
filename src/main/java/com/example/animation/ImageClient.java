@@ -28,18 +28,19 @@ public class ImageClient {
 
     /** 文生图:文字 → 图片 URL */
     public String textToImage(String prompt) throws Exception {
-        String body = """
-                {"model": "%s", "prompt": "%s", "size": "%s", "watermark": false}
-                """.formatted(MODEL, TextUtil.jsonEscape(prompt), imageSize());
-        return generate(body);
+        return generate(imageRequest(prompt, null));
     }
 
     /** 图生图:以参考图为底,按提示词修改(用于生成连贯的尾帧) */
     public String imageToImage(String prompt, String referenceDataUrl) throws Exception {
-        String body = """
-                {"model": "%s", "prompt": "%s", "image": ["%s"], "size": "%s", "watermark": false}
-                """.formatted(MODEL, TextUtil.jsonEscape(prompt), referenceDataUrl, imageSize());
-        return generate(body);
+        return generate(imageRequest(prompt, referenceDataUrl));
+    }
+
+    private String imageRequest(String prompt, String referenceDataUrl) throws Exception {
+        var body = mapper.createObjectNode().put("model", MODEL).put("prompt", prompt)
+                .put("size", imageSize()).put("watermark", false);
+        if (referenceDataUrl != null) body.putArray("image").add(referenceDataUrl);
+        return mapper.writeValueAsString(body);
     }
 
     private String imageSize() {
@@ -57,12 +58,13 @@ public class ImageClient {
                 .uri(URI.create(API_URL))
                 .header("Authorization", "Bearer " + apiKey)
                 .header("Content-Type", "application/json")
+                .timeout(Duration.ofMinutes(3))
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
 
         HttpResponse<String> resp = http.send(request, HttpResponse.BodyHandlers.ofString());
         if (resp.statusCode() != 200) {
-            throw new IllegalStateException("Seedream 生成图片失败,HTTP " + resp.statusCode() + ": " + resp.body());
+            throw new IllegalStateException(describeImageFailure(resp.body()));
         }
         JsonNode node = mapper.readTree(resp.body());
         JsonNode data = node.path("data");
@@ -76,9 +78,28 @@ public class ImageClient {
         return url;
     }
 
+    /** 把图片生成失败的错误码转成人类能看懂、能行动的提示 */
+    private String describeImageFailure(String body) {
+        try {
+            JsonNode error = mapper.readTree(body).path("error");
+            String code = error.path("code").asText("");
+            String message = error.path("message").asText("");
+            String combined = code + " " + message;
+            if (combined.toLowerCase().contains("sensitive") || combined.contains("敏感")) {
+                return "图片被内容安全审核拦截(输入文字疑似敏感,如「赤裸」「裸体」等词)。请调整措辞再试。\n原始信息: " + message;
+            }
+            if (combined.toLowerCase().contains("copyright") || combined.contains("版权")) {
+                return "图片被版权审核拦截(内容疑似涉及版权角色)。请换一个原创角色再试。\n原始信息: " + message;
+            }
+            return "Seedream 生成图片失败(" + (code.isBlank() ? "未知原因" : code) + "): " + message;
+        } catch (Exception e) {
+            return "Seedream 生成图片失败: " + body;
+        }
+    }
+
     /** 下载图片到本地 */
     public void download(String url, Path dest) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
+        HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).timeout(Duration.ofMinutes(2)).GET().build();
         HttpResponse<byte[]> resp = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
         if (resp.statusCode() != 200) {
             throw new IllegalStateException("下载图片失败 HTTP " + resp.statusCode());

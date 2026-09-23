@@ -39,25 +39,20 @@ public class DeepSeekClient {
         }
 
         // json 模式:要求返回纯 JSON。DeepSeek 要求 prompt 里含 "json" 字样(我们的提示词都满足)
-        String responseFormat = jsonMode ? ",\n  \"response_format\": {\"type\": \"json_object\"}" : "";
-        // json 模式用低温,保证结构化输出稳定(字段不漏、格式不乱);自由文本保持高温要创意
-        String temperature = jsonMode ? "0.3" : "1.0";
-
-        String body = """
-                {
-                  "model": "%s",
-                  "messages": [
-                    {"role": "system", "content": "%s"},
-                    {"role": "user", "content": "%s"}
-                  ],
-                  "temperature": %s%s
-                }
-                """.formatted(MODEL, TextUtil.jsonEscape(systemPrompt), TextUtil.jsonEscape(userMessage), temperature, responseFormat);
+        var bodyNode = mapper.createObjectNode()
+                .put("model", MODEL)
+                .put("temperature", jsonMode ? 0.3 : 1.0);
+        var messages = bodyNode.putArray("messages");
+        messages.addObject().put("role", "system").put("content", systemPrompt);
+        messages.addObject().put("role", "user").put("content", userMessage);
+        if (jsonMode) bodyNode.putObject("response_format").put("type", "json_object");
+        String body = mapper.writeValueAsString(bodyNode);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(API_URL))
                 .header("Authorization", "Bearer " + apiKey)
                 .header("Content-Type", "application/json")
+                .timeout(Duration.ofMinutes(2))
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
 

@@ -1,6 +1,7 @@
 package com.example.animation;
 
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -33,6 +34,12 @@ public class NovelVideoGenerator {
         List<Path> clips = new ArrayList<>();
         for (int i = 0; i < shots; i++) {
             Shot s = board.shots().get(i);
+            Path clip = Path.of("output", "clip-" + stamp + "-" + (i + 1) + ".mp4");
+            if (Files.exists(clip) && Files.size(clip) > 0) {
+                console.println("\n[" + (i + 1) + "/" + shots + "] 已有镜头片段，跳过生成: " + clip.getFileName());
+                clips.add(clip);
+                continue;
+            }
             console.println("\n[" + (i + 1) + "/" + shots + "] 生成镜头 " + (i + 1) + "...");
 
             String firstFrame = generateKeyframe(console, image, b, s, i + 1, stamp);
@@ -43,7 +50,6 @@ public class NovelVideoGenerator {
                     : video.submitImageToVideo(firstFrame, motion, duration);
             String url = video.waitForVideo(taskId, console);
 
-            Path clip = Path.of("output", "clip-" + stamp + "-" + (i + 1) + ".mp4");
             video.download(url, clip);
             clips.add(clip);
             console.println("   镜头 " + (i + 1) + " 完成: " + clip.getFileName());

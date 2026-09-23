@@ -14,6 +14,13 @@ public class Main {
         Console console = new SystemConsole();
         DeepSeekClient ds = new DeepSeekClient();
         Files.createDirectories(Path.of("output"));
+        if (args.length > 0 && "--resume".equals(args[0])) {
+            if (args.length != 2 || args[1].isBlank()) {
+                throw new IllegalArgumentException("用法: ./mvnw compile exec:java -Dexec.args=\"--resume 任务编号\"");
+            }
+            resumeNovelVideo(console, args[1]);
+            return;
+        }
         String stamp = InputHandler.timestamp();
 
         // 1. 输入
@@ -36,6 +43,8 @@ public class Main {
             agent.run(ctx, console);
             if (ctx.cancelled()) return;
             StoryboardWriter.write(console, ctx.novelBreakdown(), ctx.storyBoard(), stamp);
+            NovelVideoJobStore.save(stamp, input, ctx.novelBreakdown(), ctx.storyBoard());
+            console.println("小说视频任务快照: " + NovelVideoJobStore.path(stamp).toAbsolutePath());
 
             // 第 2 步:给每个镜头生成关键帧图 + 描述
             console.print("\n要不要给每个镜头生成关键帧图 + 描述?(y=生成,回车跳过): ");
@@ -64,6 +73,12 @@ public class Main {
                 VideoGenerator.generateShortVideo(console, ctx.design(), stamp);
             }
         }
+    }
+
+    private static void resumeNovelVideo(Console console, String stamp) throws Exception {
+        NovelVideoJob job = NovelVideoJobStore.load(stamp);
+        console.println("从任务 " + stamp + " 继续,共 " + job.storyboard().shots().size() + " 个镜头。");
+        NovelVideoGenerator.generate(console, job.breakdown(), job.storyboard(), stamp);
     }
 
     /** 选模式:按字数给默认建议,用户回车确认或显式指定 1/2。 */

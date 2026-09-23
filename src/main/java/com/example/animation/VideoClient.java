@@ -9,6 +9,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 
 /**
@@ -30,46 +31,40 @@ public class VideoClient {
 
     /** 文生视频 */
     public String submit(String prompt, int durationSeconds) throws Exception {
-        String contentJson = "[{\"type\": \"text\", \"text\": \"%s\"}]".formatted(TextUtil.jsonEscape(prompt));
-        return submitTask(MODEL, contentJson, durationSeconds);
+        return submitTask(MODEL, textContent(prompt), durationSeconds);
     }
 
     /** 图生视频:以图片为首帧,让它动起来 */
     public String submitImageToVideo(String imageUrl, String prompt, int durationSeconds) throws Exception {
-        String contentJson = """
-                [
-                  {"type": "text", "text": "%s"},
-                  {"type": "image_url", "image_url": {"url": "%s"}, "role": "first_frame"}
-                ]
-                """.formatted(TextUtil.jsonEscape(prompt), TextUtil.jsonEscape(imageUrl));
-        return submitTask(MODEL, contentJson, durationSeconds);
+        return submitTask(MODEL, textContent(prompt).add(imageItem(imageUrl, "first_frame")), durationSeconds);
     }
 
     /** 首尾帧生视频:两张图定义起点和终点 */
     public String submitFirstLastFrame(String firstFrameUrl, String lastFrameUrl, String prompt, int durationSeconds) throws Exception {
-        String contentJson = """
-                [
-                  {"type": "text", "text": "%s"},
-                  {"type": "image_url", "image_url": {"url": "%s"}, "role": "first_frame"},
-                  {"type": "image_url", "image_url": {"url": "%s"}, "role": "last_frame"}
-                ]
-                """.formatted(TextUtil.jsonEscape(prompt), TextUtil.jsonEscape(firstFrameUrl), TextUtil.jsonEscape(lastFrameUrl));
-        return submitTask(MODEL, contentJson, durationSeconds);
+        return submitTask(MODEL, textContent(prompt).add(imageItem(firstFrameUrl, "first_frame"))
+                .add(imageItem(lastFrameUrl, "last_frame")), durationSeconds);
     }
 
     /** 参考图 + 首帧生视频:reference_image 锁定角色贯穿全片,first_frame 定义本镜起点 */
     public String submitReferenceToVideo(String referenceDataUrl, String firstFrameDataUrl, String prompt, int durationSeconds) throws Exception {
-        String contentJson = """
-                [
-                  {"type": "text", "text": "%s"},
-                  {"type": "image_url", "image_url": {"url": "%s"}, "role": "reference_image"},
-                  {"type": "image_url", "image_url": {"url": "%s"}, "role": "first_frame"}
-                ]
-                """.formatted(TextUtil.jsonEscape(prompt), TextUtil.jsonEscape(referenceDataUrl), TextUtil.jsonEscape(firstFrameDataUrl));
-        return submitTask(REFERENCE_MODEL, contentJson, durationSeconds);
+        return submitTask(REFERENCE_MODEL, textContent(prompt).add(imageItem(referenceDataUrl, "reference_image"))
+                .add(imageItem(firstFrameDataUrl, "first_frame")), durationSeconds);
     }
 
-    private String submitTask(String model, String contentJson, int durationSeconds) throws Exception {
+    private com.fasterxml.jackson.databind.node.ArrayNode textContent(String prompt) {
+        var content = mapper.createArrayNode();
+        content.addObject().put("type", "text").put("text", prompt);
+        return content;
+    }
+
+    private com.fasterxml.jackson.databind.node.ObjectNode imageItem(String url, String role) {
+        var item = mapper.createObjectNode().put("type", "image_url").put("role", role);
+        item.putObject("image_url").put("url", url);
+        return item;
+    }
+
+    private String submitTask(String model, com.fasterxml.jackson.databind.node.ArrayNode content, int durationSeconds) throws Exception {
+        if (durationSeconds < 1) throw new IllegalArgumentException("DURATION 必须为正整数");
         String apiKey = Config.get("ARK_API_KEY");
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("请在 config.properties 里填 ARK_API_KEY");
@@ -79,20 +74,16 @@ public class VideoClient {
             resolution = "720p";
         }
 
-        String body = """
-                {
-                  "model": "%s",
-                  "content": %s,
-                  "duration": %d,
-                  "resolution": "%s",
-                  "generate_audio": false
-                }
-                """.formatted(model, contentJson, durationSeconds, resolution);
+        var bodyNode = mapper.createObjectNode().put("model", model);
+        bodyNode.set("content", content);
+        bodyNode.put("duration", durationSeconds).put("resolution", resolution).put("generate_audio", false);
+        String body = mapper.writeValueAsString(bodyNode);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(BASE_URL + "/contents/generations/tasks"))
                 .header("Authorization", "Bearer " + apiKey)
                 .header("Content-Type", "application/json")
+                .timeout(Duration.ofMinutes(3))
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
 
@@ -115,9 +106,17 @@ public class VideoClient {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(BASE_URL + "/contents/generations/tasks/" + taskId))
                     .header("Authorization", "Bearer " + apiKey)
+                    .timeout(Duration.ofSeconds(30))
                     .GET()
                     .build();
             HttpResponse<String> resp = http.send(request, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+                if (resp.statusCode() == 429 || resp.statusCode() >= 500) {
+                    Thread.sleep(Math.min(15000, 2000L * (i + 1)));
+                    continue;
+                }
+                throw new IllegalStateException("查询视频任务失败,HTTP " + resp.statusCode() + ": " + resp.body());
+            }
             JsonNode node = mapper.readTree(resp.body());
             String status = node.path("status").asText();
             console.println("   [进度] 第 " + (i + 1) + " 次查询: " + status);
@@ -125,7 +124,7 @@ public class VideoClient {
                 return extractVideoUrl(node);
             }
             if ("failed".equals(status) || "error".equals(status) || "expired".equals(status)) {
-                throw new IllegalStateException("视频生成失败,响应:" + resp.body());
+                throw new IllegalStateException(describeVideoFailure(node));
             }
             Thread.sleep(5000);
         }
@@ -149,13 +148,40 @@ public class VideoClient {
         throw new IllegalStateException("没找到视频地址,完整响应:" + node.toString());
     }
 
+    /** 把失败任务的错误码转成人类能看懂、能行动的提示 */
+    private String describeVideoFailure(JsonNode node) {
+        JsonNode error = node.path("error");
+        String code = error.path("code").asText("");
+        String message = error.path("message").asText("");
+        String combined = code + " " + message;
+        if (combined.toLowerCase().contains("copyright") || combined.contains("PolicyViolation") || combined.contains("版权")) {
+            return "视频被版权审核拦截(内容疑似涉及版权角色/作品,如皮卡丘等 IP)。请换一个原创角色或题材再试。\n原始信息: " + message;
+        }
+        if (combined.toLowerCase().contains("sensitive") || combined.contains("敏感")) {
+            return "视频被内容安全审核拦截(内容疑似敏感)。请调整措辞再试。\n原始信息: " + message;
+        }
+        return "视频生成失败(" + (code.isBlank() ? "未知原因" : code) + "): " + message;
+    }
+
     /** 下载视频到本地 */
     public void download(String url, Path dest) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
+        HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).timeout(Duration.ofMinutes(5)).GET().build();
         HttpResponse<byte[]> resp = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
         if (resp.statusCode() != 200) {
             throw new IllegalStateException("下载失败 HTTP " + resp.statusCode());
         }
-        Files.write(dest, resp.body());
+        Path parent = dest.toAbsolutePath().getParent();
+        if (parent != null) Files.createDirectories(parent);
+        Path temp = Files.createTempFile(parent, dest.getFileName().toString(), ".part");
+        try {
+            Files.write(temp, resp.body());
+            try {
+                Files.move(temp, dest, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                Files.move(temp, dest, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(temp);
+        }
     }
 }

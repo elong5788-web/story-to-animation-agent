@@ -1,9 +1,10 @@
 package com.example.animation;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 用 ffmpeg 把多个镜头片段拼接成片(concat demuxer,-c copy 无重编码)。
@@ -21,22 +22,38 @@ public class VideoAssembler {
         for (Path c : clips) {
             sb.append("file '").append(c.toAbsolutePath().toString().replace('\\', '/')).append("'\n");
         }
-        Files.writeString(listFile, sb.toString(), StandardCharsets.UTF_8);
+        Files.writeString(listFile, sb.toString());
+        Path logFile = Files.createTempFile("ffmpeg-", ".log");
+        Path absoluteOutput = output.toAbsolutePath();
+        Path outputParent = absoluteOutput.getParent();
+        Files.createDirectories(outputParent);
+        Path tempOutput = Files.createTempFile(outputParent, "assembling-", ".mp4");
 
         try {
             ProcessBuilder pb = new ProcessBuilder(
                     "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", listFile.toString(),
-                    "-c", "copy", output.toString());
-            pb.redirectErrorStream(true);
+                    "-c", "copy", tempOutput.toString());
+            pb.redirectErrorStream(true).redirectOutput(logFile.toFile());
             Process p = pb.start();
-            int exit = p.waitFor();
+            if (!p.waitFor(10, TimeUnit.MINUTES)) {
+                p.destroyForcibly();
+                throw new IllegalStateException("ffmpeg 拼接超时(10 分钟)");
+            }
+            int exit = p.exitValue();
             if (exit != 0) {
-                String err = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                String err = Files.readString(logFile);
                 throw new IllegalStateException("ffmpeg 拼接失败,exit=" + exit + ": " + err);
+            }
+            try {
+                Files.move(tempOutput, absoluteOutput, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                Files.move(tempOutput, absoluteOutput, StandardCopyOption.REPLACE_EXISTING);
             }
         } finally {
             Files.deleteIfExists(listFile);
+            Files.deleteIfExists(logFile);
+            Files.deleteIfExists(tempOutput);
         }
-        return output;
+        return absoluteOutput;
     }
 }
