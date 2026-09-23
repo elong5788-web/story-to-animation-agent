@@ -49,4 +49,20 @@ public class Config {
             throw new IllegalArgumentException("配置项 " + key + " 必须是整数，当前值: " + v, e);
         }
     }
+
+    /** 读取浮点配置并限制范围,避免无效采样参数发送到模型接口。 */
+    public static double getDouble(String key, double defaultValue, double min, double max) {
+        String v = get(key);
+        if (v == null || v.isBlank()) return defaultValue;
+        final double parsed;
+        try {
+            parsed = Double.parseDouble(v.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("配置项 " + key + " 必须是数字，当前值: " + v, e);
+        }
+        if (!Double.isFinite(parsed) || parsed < min || parsed > max) {
+            throw new IllegalArgumentException("配置项 " + key + " 必须在 " + min + " 到 " + max + " 之间，当前值: " + v);
+        }
+        return parsed;
+    }
 }

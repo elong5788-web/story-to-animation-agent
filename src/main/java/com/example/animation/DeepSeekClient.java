@@ -41,7 +41,7 @@ public class DeepSeekClient {
         // json 模式:要求返回纯 JSON。DeepSeek 要求 prompt 里含 "json" 字样(我们的提示词都满足)
         var bodyNode = mapper.createObjectNode()
                 .put("model", MODEL)
-                .put("temperature", jsonMode ? 0.3 : 1.0);
+                .put("temperature", jsonMode ? Config.getDouble("JSON_TEMPERATURE", 0.65, 0.0, 2.0) : 1.0);
         var messages = bodyNode.putArray("messages");
         messages.addObject().put("role", "system").put("content", systemPrompt);
         messages.addObject().put("role", "user").put("content", userMessage);

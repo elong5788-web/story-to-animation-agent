@@ -71,7 +71,7 @@ public class ShotDesigner extends Skill<ShotDesign> {
 
     @Override
     protected String alternateHint() {
-        return "\n(请给和上次不同的版本)";
+        return "\n(请保留故事、角色和画风，但明显改变上次方案的场景调度、动作设计、景别组合与运镜节奏；不要只替换形容词。)";
     }
 
     @Override

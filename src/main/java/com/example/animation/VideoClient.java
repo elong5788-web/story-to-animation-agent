@@ -3,6 +3,8 @@ package com.example.animation;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -102,33 +104,60 @@ public class VideoClient {
     /** 轮询任务直到完成,返回视频下载地址 */
     public String waitForVideo(String taskId, Console console) throws Exception {
         String apiKey = Config.get("ARK_API_KEY");
-        for (int i = 0; i < 60; i++) {   // 最多 60 次 × 5 秒 = 5 分钟
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException("请在 config.properties 里填 ARK_API_KEY(或设置环境变量)");
+        }
+        long deadline = System.nanoTime() + Duration.ofMinutes(5).toNanos();
+        int attempt = 0;
+        while (System.nanoTime() < deadline) {
+            long remaining = deadline - System.nanoTime();
+            Duration requestTimeout = Duration.ofNanos(Math.max(1L,
+                    Math.min(Duration.ofSeconds(30).toNanos(), remaining)));
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(BASE_URL + "/contents/generations/tasks/" + taskId))
                     .header("Authorization", "Bearer " + apiKey)
-                    .timeout(Duration.ofSeconds(30))
+                    .timeout(requestTimeout)
                     .GET()
                     .build();
-            HttpResponse<String> resp = http.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> resp;
+            try {
+                resp = http.send(request, HttpResponse.BodyHandlers.ofString());
+            } catch (IOException e) {
+                console.println("   [网络波动] 查询失败，将重试: " + e.getMessage());
+                sleepUntil(deadline, retryDelay(attempt++));
+                continue;
+            }
             if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
                 if (resp.statusCode() == 429 || resp.statusCode() >= 500) {
-                    Thread.sleep(Math.min(15000, 2000L * (i + 1)));
+                    console.println("   [网络波动] 查询返回 HTTP " + resp.statusCode() + "，将重试");
+                    sleepUntil(deadline, retryDelay(attempt++));
                     continue;
                 }
                 throw new IllegalStateException("查询视频任务失败,HTTP " + resp.statusCode() + ": " + resp.body());
             }
             JsonNode node = mapper.readTree(resp.body());
             String status = node.path("status").asText();
-            console.println("   [进度] 第 " + (i + 1) + " 次查询: " + status);
+            console.println("   [进度] 第 " + (++attempt) + " 次查询: " + status);
             if ("succeeded".equals(status) || "success".equals(status)) {
                 return extractVideoUrl(node);
             }
             if ("failed".equals(status) || "error".equals(status) || "expired".equals(status)) {
-                throw new IllegalStateException(describeVideoFailure(node));
+                throw new TerminalVideoTaskException(describeVideoFailure(node));
             }
-            Thread.sleep(5000);
+            sleepUntil(deadline, 5000);
         }
         throw new IllegalStateException("等待超时");
+    }
+
+    private static void sleepUntil(long deadline, long requestedMillis) throws InterruptedException {
+        long remainingNanos = deadline - System.nanoTime();
+        if (remainingNanos <= 0) return;
+        long remainingMillis = Math.max(1L, remainingNanos / 1_000_000L);
+        Thread.sleep(Math.min(requestedMillis, remainingMillis));
+    }
+
+    private static long retryDelay(int attempt) {
+        return Math.min(15_000L, 1_000L << Math.min(attempt, 4));
     }
 
     private String extractVideoUrl(JsonNode node) {
@@ -165,23 +194,51 @@ public class VideoClient {
 
     /** 下载视频到本地 */
     public void download(String url, Path dest) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).timeout(Duration.ofMinutes(5)).GET().build();
-        HttpResponse<byte[]> resp = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
-        if (resp.statusCode() != 200) {
-            throw new IllegalStateException("下载失败 HTTP " + resp.statusCode());
-        }
         Path parent = dest.toAbsolutePath().getParent();
-        if (parent != null) Files.createDirectories(parent);
-        Path temp = Files.createTempFile(parent, dest.getFileName().toString(), ".part");
-        try {
-            Files.write(temp, resp.body());
+        Files.createDirectories(parent);
+        IOException lastIo = null;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            Path temp = Files.createTempFile(parent, dest.getFileName().toString(), ".part");
             try {
-                Files.move(temp, dest, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
-                Files.move(temp, dest, StandardCopyOption.REPLACE_EXISTING);
+                HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).timeout(Duration.ofMinutes(10)).GET().build();
+                HttpResponse<Path> resp = http.send(request, HttpResponse.BodyHandlers.ofFile(temp));
+                if (resp.statusCode() != 200) {
+                    String detail;
+                    try (var in = Files.newInputStream(temp)) {
+                        detail = new String(in.readNBytes(2048), StandardCharsets.UTF_8);
+                    }
+                    if (resp.statusCode() == 429 || resp.statusCode() >= 500) {
+                        lastIo = new IOException("视频下载返回 HTTP " + resp.statusCode()
+                                + (detail.isBlank() ? "" : ": " + detail));
+                        if (attempt < 2) {
+                            Thread.sleep(retryDelay(attempt));
+                            continue;
+                        }
+                    } else {
+                        throw new IllegalStateException("下载失败 HTTP " + resp.statusCode() + (detail.isBlank() ? "" : ": " + detail));
+                    }
+                }
+                if (resp.statusCode() == 200) {
+                    try {
+                        Files.move(temp, dest, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                    } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                        Files.move(temp, dest, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                    return;
+                }
+            } catch (IOException e) {
+                lastIo = e;
+                if (attempt == 2) throw e;
+                Thread.sleep(retryDelay(attempt));
+            } finally {
+                Files.deleteIfExists(temp);
             }
-        } finally {
-            Files.deleteIfExists(temp);
         }
+        throw new IOException("视频下载重试 3 次仍失败", lastIo);
+    }
+
+    /** 服务端已明确将任务置为终态失败,调用方可以安全清除本地待恢复任务号。 */
+    public static class TerminalVideoTaskException extends IllegalStateException {
+        public TerminalVideoTaskException(String message) { super(message); }
     }
 }

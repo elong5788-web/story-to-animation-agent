@@ -37,20 +37,36 @@ public class NovelVideoGenerator {
             Path clip = Path.of("output", "clip-" + stamp + "-" + (i + 1) + ".mp4");
             if (Files.exists(clip) && Files.size(clip) > 0) {
                 console.println("\n[" + (i + 1) + "/" + shots + "] 已有镜头片段，跳过生成: " + clip.getFileName());
+                if (NovelVideoJobStore.videoTaskId(stamp, i + 1) != null) {
+                    NovelVideoJobStore.clearVideoTaskId(stamp, i + 1);
+                }
                 clips.add(clip);
                 continue;
             }
             console.println("\n[" + (i + 1) + "/" + shots + "] 生成镜头 " + (i + 1) + "...");
 
-            String firstFrame = generateKeyframe(console, image, b, s, i + 1, stamp);
-            String motion = String.join(",", s.framing(), s.action(), s.camera());
-            console.println("   提交视频任务...");
-            String taskId = useReference
-                    ? video.submitReferenceToVideo(reference, firstFrame, motion, duration)
-                    : video.submitImageToVideo(firstFrame, motion, duration);
-            String url = video.waitForVideo(taskId, console);
+            String taskId = NovelVideoJobStore.videoTaskId(stamp, i + 1);
+            if (taskId == null || taskId.isBlank()) {
+                String firstFrame = generateKeyframe(console, image, b, s, i + 1, stamp);
+                String motion = String.join(",", s.framing(), s.action(), s.camera());
+                console.println("   提交视频任务...");
+                taskId = useReference
+                        ? video.submitReferenceToVideo(reference, firstFrame, motion, duration)
+                        : video.submitImageToVideo(firstFrame, motion, duration);
+                NovelVideoJobStore.saveVideoTaskId(stamp, i + 1, taskId);
+            } else {
+                console.println("   恢复已提交的视频任务: " + taskId);
+            }
+            String url;
+            try {
+                url = video.waitForVideo(taskId, console);
+            } catch (VideoClient.TerminalVideoTaskException e) {
+                NovelVideoJobStore.clearVideoTaskId(stamp, i + 1);
+                throw e;
+            }
 
             video.download(url, clip);
+            NovelVideoJobStore.clearVideoTaskId(stamp, i + 1);
             clips.add(clip);
             console.println("   镜头 " + (i + 1) + " 完成: " + clip.getFileName());
         }
@@ -62,20 +78,29 @@ public class NovelVideoGenerator {
 
     /** 角色定妆参考图:文生图,画风 + 角色卡 + 定妆照规格 */
     private static String generateCharacterReference(Console console, ImageClient image, NovelBreakdown b, String stamp) throws Exception {
-        String prompt = b.style() + "," + b.characters() + ",角色定妆照,正面全身,高清,无水印";
-        String url = image.textToImage(prompt);
         Path ref = Path.of("output", "character-ref-" + stamp + ".jpg");
-        image.download(url, ref);
+        if (!Files.isRegularFile(ref) || Files.size(ref) == 0) {
+            String prompt = b.style() + "," + b.characters() + ",角色定妆照,正面全身,高清,无水印";
+            String url = image.textToImage(prompt);
+            image.download(url, ref);
+        } else {
+            console.println("   复用角色参考图: " + ref.toAbsolutePath());
+        }
         console.println("   角色参考图: " + ref.toAbsolutePath());
         return ImageClient.toDataUrl(ref);
     }
 
     /** 单镜关键帧:文生图,画风+角色卡+场景+景别+动作,保证与全片一致 */
     private static String generateKeyframe(Console console, ImageClient image, NovelBreakdown b, Shot s, int idx, String stamp) throws Exception {
+        Path kf = Path.of("output", "shot-" + stamp + "-" + idx + ".jpg");
+        if (Files.isRegularFile(kf) && Files.size(kf) > 0) {
+            console.println("   复用已生成的关键帧: " + kf.toAbsolutePath());
+            return ImageClient.toDataUrl(kf);
+        }
+
         String quality = s.quality().isBlank() ? "4K,电影级画质" : s.quality();
         String prompt = String.join(",", b.style(), b.characters(), s.scene(), s.framing(), s.action(), quality, "无水印");
         String url = image.textToImage(prompt);
-        Path kf = Path.of("output", "shot-" + stamp + "-" + idx + ".jpg");
         image.download(url, kf);
         console.println("   关键帧: " + kf.getFileName());
         return ImageClient.toDataUrl(kf);

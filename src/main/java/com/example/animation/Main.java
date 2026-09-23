@@ -64,6 +64,10 @@ public class Main {
         }
 
         // 4. 可选:生成视频(按模式分发)
+        if (isNovel) {
+            console.println("\n小说模式会复用 output/shot-" + stamp + "-N.jpg 作为各镜头首帧。"
+                    + "可先检查或替换已生成的图片，再继续生成视频。");
+        }
         console.print("\n要不要顺便生成视频?(y=生成,回车跳过): ");
         String gen = console.readLine();
         if (gen != null && (gen.trim().equalsIgnoreCase("y") || gen.trim().equalsIgnoreCase("yes"))) {

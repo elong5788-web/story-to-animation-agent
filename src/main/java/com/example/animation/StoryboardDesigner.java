@@ -64,7 +64,7 @@ public class StoryboardDesigner extends Skill<StoryBoard> {
 
     @Override
     protected String alternateHint() {
-        return "\n(请给一套不同的分镜)";
+        return "\n(请保留原故事、角色和画风，重新设计镜头顺序、景别、动作路径和运镜；避免重复上一版的构图和镜头表达。)";
     }
 
     @Override

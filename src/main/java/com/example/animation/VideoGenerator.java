@@ -22,10 +22,23 @@ public class VideoGenerator {
         String keyframe = askForKeyframe(console, scene);
         if (keyframe == null) return;
 
-        // 2. 图生视频
-        console.println("\n生成视频(图生视频,约 1~3 分钟)...");
+        console.print("\n有尾帧图片吗?(y=选择尾帧;回车=只用首帧): ");
+        String lastAnswer = console.readLine();
+        String lastFrame = null;
+        if (lastAnswer != null && (lastAnswer.trim().equalsIgnoreCase("y") || lastAnswer.trim().equalsIgnoreCase("yes"))) {
+            lastFrame = askForKeyframe(console, scene + "\n镜头结束状态，作为视频尾帧；保持主体身份与画风一致");
+            if (lastFrame == null) return;
+        }
+
+        // 2. 用首帧或首尾帧生成视频
+        console.println(lastFrame == null
+                ? "\n生成视频(关键帧作为首帧,约 1~3 分钟)..."
+                : "\n生成视频(按首尾关键帧生成,约 1~3 分钟)...");
         VideoClient video = new VideoClient();
-        String taskId = video.submitImageToVideo(keyframe, motion, duration);
+        String taskId = lastFrame == null
+                ? video.submitImageToVideo(keyframe, motion, duration)
+                : video.submitFirstLastFrame(keyframe, lastFrame,
+                        motion + ",从首帧自然过渡到尾帧，保持主体身份与画风一致", duration);
         String url = video.waitForVideo(taskId, console);
         Path out = Path.of("output", "video-" + stamp + ".mp4");
         video.download(url, out);
@@ -47,7 +60,9 @@ public class VideoGenerator {
             if (!materialsImages.isEmpty()) console.println("  · 输入序号,选 materials/ 里的图");
             console.println("  · 直接回车 → 让 AI 文生图");
             console.print("> ");
-            String answer = console.readLine().trim();
+            String line = console.readLine();
+            if (line == null) return null;
+            String answer = line.trim();
 
             if (answer.isBlank()) {
                 return aiKeyframeWithReview(console, scene);
@@ -75,15 +90,18 @@ public class VideoGenerator {
     /** AI 文生图 + 用户确认,返回 dataURL(取消返回 null) */
     static String aiKeyframeWithReview(Console console, String scene) throws Exception {
         ImageClient image = new ImageClient();
+        Files.createDirectories(Path.of("output"));
         while (true) {
             console.println("\n① 文生图:生成关键帧(约 10~30 秒)...");
             String url = image.textToImage(scene);
-            Path keyframe = Path.of("output", "keyframe-" + InputHandler.timestamp() + ".jpg");
+            Path keyframe = Files.createTempFile(Path.of("output"), "keyframe-" + InputHandler.timestamp() + "-", ".jpg");
             image.download(url, keyframe);
             console.println("   关键帧已生成: " + keyframe);
             console.println("   (可打开这个文件查看)");
             console.print("   满意吗?(y 满意 / r 重新生成 / n 取消): ");
-            String answer = console.readLine().trim();
+            String line = console.readLine();
+            if (line == null) return null;
+            String answer = line.trim();
             if (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes")) {
                 return ImageClient.toDataUrl(keyframe);
             }

@@ -91,7 +91,8 @@ public abstract class Skill<T> {
             }
             String feedback;
             if (answer.equalsIgnoreCase("r") || answer.equals("换一个")) {
-                feedback = alternateHint();
+                // 把当前结果连同“换一个”的要求发回模型,否则它看不到自己需要避开的上一版。
+                feedback = feedbackText(alternateHint(), current);
             } else {
                 feedback = feedbackText(answer, current);  // 单行意见即可;原来的 readRest() 会让用户以为打字没用(要按两次回车)
             }
